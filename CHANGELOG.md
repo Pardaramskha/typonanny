@@ -1,5 +1,24 @@
 # Changelog — Typonanny
 
+## 1.3.0 — 2026-07-19
+
+- **L'aperçu déménage dans le navigateur.** Nouveau bouton « 👁 Ouvrir
+  l'aperçu » : le résultat nettoyé est écrit dans `exports\apercu.html`
+  (un seul fichier, écrasé à chaque fois) puis ouvert dans le navigateur
+  par défaut — gras, italiques, exposants, titres et listes rendus
+  proprement (via Pandoc, avec un mini-rendu Markdown maison en repli),
+  cadratins et insécables affichés tels quels. En-tête « Stargazer —
+  Typonanny » avec le nom du document travaillé en sous-titre, mise en
+  page lecture (sérif, colonne confortable) aux couleurs de la famille.
+- **La zone « Après » disparaît** : votre texte prend toute la largeur,
+  la relecture se fait dans l'aperçu. « Copier » et « Enregistrer
+  sous… » utilisent toujours le dernier résultat nettoyé (modifier le
+  texte l'invalide, re-nettoyer le régénère — l'aperçu le fait tout
+  seul si besoin).
+- Les balises HTML égarées dans un manuscrit s'affichent au lieu de
+  s'exécuter dans l'aperçu. Le dossier `exports\` est exclu de la
+  valise et du dépôt.
+
 ## 1.2.0 — 2026-07-19
 
 - **Les styles du .docx sont conservés à l'identique.** Enregistrer un

@@ -971,6 +971,29 @@ namespace Typonanny
             }
         }
 
+        // Markdown -> fragment HTML (pour l'aperçu dans le navigateur) :
+        // gras, italiques, exposants, listes… rendus par Pandoc.
+        public static string MarkdownVersHtml(string pandoc, string markdown)
+        {
+            var tempMd = Path.Combine(Path.GetTempPath(),
+                "typonanny_" + Guid.NewGuid().ToString("N") + ".md");
+            var tempHtml = Path.ChangeExtension(tempMd, ".html");
+            try
+            {
+                File.WriteAllText(tempMd, markdown, new UTF8Encoding(false));
+                // -raw_html : un manuscrit est du texte — une balise <script>
+                // qui traîne doit s'afficher, pas s'exécuter dans l'aperçu.
+                Executer(pandoc, "--wrap=none -f markdown-raw_html -t html -o \"" +
+                    tempHtml + "\" \"" + tempMd + "\"");
+                return File.ReadAllText(tempHtml);
+            }
+            finally
+            {
+                try { if (File.Exists(tempMd)) File.Delete(tempMd); } catch { }
+                try { if (File.Exists(tempHtml)) File.Delete(tempHtml); } catch { }
+            }
+        }
+
         // Sans Pandoc : le texte brut du document, paragraphe par paragraphe
         // (docx et odt sont des ZIP contenant le texte en XML).
         public static string ExtraireTexteBrut(string document)
@@ -1013,6 +1036,83 @@ namespace Typonanny
             return s.Replace("&lt;", "<").Replace("&gt;", ">")
                     .Replace("&quot;", "\"").Replace("&apos;", "'")
                     .Replace("&amp;", "&");
+        }
+    }
+
+    // --------------------------------------------- aperçu (navigateur)
+    // Le résultat se relit dans le navigateur, mis en page : gras,
+    // italiques, exposants et compagnie rendus proprement, cadratins et
+    // insécables affichés tels quels (UTF-8). Pandoc fait le rendu quand
+    // il est là ; sinon, un mini-rendu Markdown maison prend le relais.
+
+    public static class Apercu
+    {
+        public static string Construire(string nomDocument, string texte, string pandoc)
+        {
+            string corps = null;
+            if (pandoc != null)
+                try { corps = PontDocuments.MarkdownVersHtml(pandoc, texte); }
+                catch { }
+            if (corps == null) corps = RenduSommaire(texte);
+
+            var sb = new StringBuilder();
+            sb.Append("<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n");
+            sb.Append("<meta charset=\"utf-8\">\n");
+            sb.Append("<title>Stargazer — Typonanny — ").Append(Echapper(nomDocument))
+              .Append("</title>\n<style>\n");
+            sb.Append("body{background:#0b1026;color:#e6e6f0;margin:0;padding:0}\n");
+            sb.Append("header{background:#131a33;border-bottom:1px solid #2a3358;");
+            sb.Append("padding:1.2em 2em;font-family:'Segoe UI',sans-serif}\n");
+            sb.Append("header h1{color:#f4d77a;font-size:1.25em;margin:0}\n");
+            sb.Append("header p{color:#9aa3c0;margin:.3em 0 0;font-size:.95em}\n");
+            sb.Append("main{max-width:44em;margin:2.5em auto;padding:0 1.5em;");
+            sb.Append("font-family:Georgia,'Times New Roman',serif;font-size:1.05em;");
+            sb.Append("line-height:1.75}\n");
+            sb.Append("main h1,main h2,main h3,main h4{color:#f4d77a;");
+            sb.Append("font-family:'Segoe UI',sans-serif;line-height:1.3}\n");
+            sb.Append("main a{color:#7aa2f7}\n");
+            sb.Append("blockquote{border-left:3px solid #d4af37;margin-left:0;");
+            sb.Append("padding-left:1em;color:#9aa3c0}\n");
+            sb.Append("code{background:#131a33;padding:.1em .3em;border-radius:4px}\n");
+            sb.Append("</style>\n</head>\n<body>\n<header>\n");
+            sb.Append("<h1>⭐ Stargazer — Typonanny</h1>\n");
+            sb.Append("<p>").Append(Echapper(nomDocument)).Append("</p>\n");
+            sb.Append("</header>\n<main>\n");
+            sb.Append(corps);
+            sb.Append("\n</main>\n</body>\n</html>\n");
+            return sb.ToString();
+        }
+
+        // Repli sans Pandoc : l'essentiel du Markdown (titres, gras,
+        // italiques, exposants/indices, paragraphes), texte échappé d'abord.
+        private static string RenduSommaire(string texte)
+        {
+            var t = Echapper(texte.Replace("\r\n", "\n"));
+            for (var niveau = 6; niveau >= 1; niveau--)
+            {
+                var diese = new string('#', niveau);
+                t = Regex.Replace(t, @"(?m)^" + diese + @"\s+(.+)$",
+                    "<h" + niveau + ">$1</h" + niveau + ">");
+            }
+            t = Regex.Replace(t, @"\*\*([^*\n]+)\*\*", "<strong>$1</strong>");
+            t = Regex.Replace(t, @"(?<![\w*])\*([^*\n]+)\*(?![\w*])", "<em>$1</em>");
+            t = Regex.Replace(t, @"\^([^\^\s]+)\^", "<sup>$1</sup>");
+            t = Regex.Replace(t, @"(?<!~)~([^~\s]+)~(?!~)", "<sub>$1</sub>");
+
+            var sb = new StringBuilder();
+            foreach (var bloc in Regex.Split(t, @"\n\s*\n"))
+            {
+                var b = bloc.Trim();
+                if (b.Length == 0) continue;
+                if (b.StartsWith("<h")) sb.Append(b).Append('\n');
+                else sb.Append("<p>").Append(b.Replace("\n", "<br>\n")).Append("</p>\n");
+            }
+            return sb.ToString();
+        }
+
+        private static string Echapper(string s)
+        {
+            return s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
         }
     }
 
@@ -1162,7 +1262,7 @@ namespace Typonanny
             ref int value, int size);
 
         private readonly TextBox _avant;
-        private readonly TextBox _apres;
+        private string _resultat;   // texte nettoyé (aperçu, copie, export)
         private readonly Label _stats;
         private readonly ListBox _rapport;
         private readonly Label _status;
@@ -1178,7 +1278,7 @@ namespace Typonanny
         {
             Text = "Typonanny";
             ClientSize = new Size(980, 640);
-            MinimumSize = new Size(760, 520);
+            MinimumSize = new Size(900, 520);
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 9f);
             BackColor = Theme.Nuit;
@@ -1207,32 +1307,30 @@ namespace Typonanny
             };
             var nettoyer = Bouton("✨  Nettoyer", 242, 46, 120, true);
             nettoyer.Click += delegate(object s, EventArgs e) { Nettoyer(); };
-            var copier = Bouton("Copier le résultat", 370, 46, 130, false);
+            var apercu = Bouton("👁  Ouvrir l'aperçu", 370, 46, 140, false);
+            apercu.Click += delegate(object s, EventArgs e) { OuvrirApercu(); };
+            var copier = Bouton("Copier", 518, 46, 80, false);
             copier.Click += delegate(object s, EventArgs e)
             {
-                try { if (_apres.Text.Length > 0) Clipboard.SetText(_apres.Text); } catch { }
+                try { if (_resultat != null && _resultat.Length > 0) Clipboard.SetText(_resultat); }
+                catch { }
             };
-            var enregistrer = Bouton("Enregistrer sous…", 508, 46, 130, false);
+            var enregistrer = Bouton("Enregistrer sous…", 606, 46, 140, false);
             enregistrer.Click += delegate(object s, EventArgs e) { Enregistrer(); };
-            var regles = Bouton("Règles…", 646, 46, 90, false);
+            var regles = Bouton("Règles…", 754, 46, 90, false);
             regles.Click += delegate(object s, EventArgs e) { OuvrirRegles(); };
 
             var lAvant = new Label();
-            lAvant.Text = "Avant (collez ou déposez votre texte) :";
+            lAvant.Text = "Votre texte (collez, déposez ou ouvrez) — le résultat se " +
+                "relit via « Ouvrir l'aperçu », mis en page dans le navigateur :";
             lAvant.ForeColor = Theme.TexteDoux;
-            lAvant.SetBounds(20, 88, 400, 18);
-
-            var lApres = new Label();
-            lApres.Text = "Après :";
-            lApres.ForeColor = Theme.TexteDoux;
-            lApres.SetBounds(0, 88, 200, 18);   // repositionné au resize
+            lAvant.SetBounds(20, 88, 800, 18);
 
             _avant = ZoneTexte();
-            _apres = ZoneTexte();
-            _apres.ReadOnly = true;
             _avant.TextChanged += delegate(object s, EventArgs e)
             {
                 _stats.Text = Typo.Statistiques(_avant.Text);
+                _resultat = null;   // le texte a bougé : l'ancien résultat est périmé
             };
 
             _stats = new Label();
@@ -1253,12 +1351,12 @@ namespace Typonanny
             _status.AutoEllipsis = true;
 
             Controls.Add(titre);
-            Controls.Add(lAvant); Controls.Add(lApres);
-            Controls.Add(_avant); Controls.Add(_apres);
+            Controls.Add(lAvant);
+            Controls.Add(_avant);
             Controls.Add(_stats); Controls.Add(_rapport); Controls.Add(_status);
 
-            Resize += delegate(object s, EventArgs e) { Disposer(lApres); };
-            Disposer(lApres);
+            Resize += delegate(object s, EventArgs e) { Disposer(); };
+            Disposer();
 
             DragEnter += delegate(object s, DragEventArgs e)
             {
@@ -1298,17 +1396,14 @@ namespace Typonanny
             return t;
         }
 
-        // Mise en page manuelle : deux colonnes égales, stats + rapport en bas.
-        private void Disposer(Label lApres)
+        // Mise en page manuelle : le texte pleine largeur (l'aperçu vit dans
+        // le navigateur), stats + rapport en bas.
+        private void Disposer()
         {
-            var largeur = (ClientSize.Width - 60) / 2;
             var hautZones = 110;
             var hautRapport = 96;
             var hauteur = ClientSize.Height - hautZones - hautRapport - 66;
-            _avant.SetBounds(20, hautZones, largeur, hauteur);
-            _apres.SetBounds(40 + largeur, hautZones, largeur, hauteur);
-            lApres.Left = 40 + largeur;
-            lApres.Top = 88;
+            _avant.SetBounds(20, hautZones, ClientSize.Width - 40, hauteur);
             _stats.SetBounds(20, hautZones + hauteur + 8, ClientSize.Width - 40, 20);
             _rapport.SetBounds(20, hautZones + hauteur + 32, ClientSize.Width - 40, hautRapport - 12);
             _status.SetBounds(20, ClientSize.Height - 26, ClientSize.Width - 40, 20);
@@ -1389,7 +1484,7 @@ namespace Typonanny
                     _status.ForeColor = Theme.TexteDoux;
                 }
                 _fichierSource = chemin;
-                _apres.Text = "";
+                _resultat = null;
                 _rapport.Items.Clear();
             }
             catch (Exception ex)
@@ -1410,7 +1505,7 @@ namespace Typonanny
             var oe = Typo.ChargerLigatures("ligatures.txt", Typo.LigaturesOeDefaut);
             var ae = Typo.ChargerLigatures("ligatures-ae.txt", Typo.LigaturesAeDefaut);
             var r = Typo.Nettoyer(_avant.Text, _options, oe, ae);
-            _apres.Text = _options.signalerSeulement ? _avant.Text : r.Texte;
+            _resultat = _options.signalerSeulement ? _avant.Text : r.Texte;
 
             _rapport.Items.Clear();
             var total = 0;
@@ -1426,16 +1521,48 @@ namespace Typonanny
             foreach (var ligne in Typo.StatistiquesParChapitre(_avant.Text))
                 _rapport.Items.Add("§  " + ligne);
 
-            _status.Text = _options.signalerSeulement
+            _status.Text = (_options.signalerSeulement
                 ? total + " correction(s) possibles (mode signalement : rien n'a été modifié)."
                 : total + " correction(s) appliquée(s)" +
-                  (r.Signalements.Count > 0 ? ", " + r.Signalements.Count + " signalement(s)." : ".");
+                  (r.Signalements.Count > 0 ? ", " + r.Signalements.Count + " signalement(s)." : ".")) +
+                "  « Ouvrir l'aperçu » pour relire confortablement.";
             _status.ForeColor = Theme.Ok;
+        }
+
+        // Écrit l'aperçu HTML dans exports\apercu.html (écrasé à chaque
+        // fois) et l'ouvre dans le navigateur par défaut.
+        private void OuvrirApercu()
+        {
+            if (_resultat == null)
+            {
+                Nettoyer();   // par confort : nettoie puis montre
+                if (_resultat == null) return;
+            }
+            try
+            {
+                var dir = Path.Combine(_appDir, "exports");
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                var chemin = Path.Combine(dir, "apercu.html");
+                var nomDoc = _fichierSource != null
+                    ? Path.GetFileName(_fichierSource) : "texte collé";
+                var pandoc = PontDocuments.TrouverPandoc(_appDir);
+                File.WriteAllText(chemin,
+                    Apercu.Construire(nomDoc, _resultat, pandoc),
+                    new UTF8Encoding(true));
+                System.Diagnostics.Process.Start(chemin);
+                _status.Text = "Aperçu ouvert dans le navigateur — " + chemin;
+                _status.ForeColor = Theme.Ok;
+            }
+            catch (Exception ex)
+            {
+                _status.Text = "Impossible d'ouvrir l'aperçu : " + ex.Message;
+                _status.ForeColor = Theme.Erreur;
+            }
         }
 
         private void Enregistrer()
         {
-            if (_apres.Text.Length == 0)
+            if (_resultat == null || _resultat.Length == 0)
             {
                 _status.Text = "Nettoyez d'abord : c'est le résultat qui s'enregistre.";
                 _status.ForeColor = Theme.TexteDoux;
@@ -1496,7 +1623,7 @@ namespace Typonanny
                             throw new Exception("Pandoc introuvable — enregistrez " +
                                 "en .txt/.md, ou installez Pandoc via Skadoosh.");
                         // le document d'origine sert de gabarit de styles
-                        PontDocuments.ExporterDepuisMarkdown(pandoc, _apres.Text,
+                        PontDocuments.ExporterDepuisMarkdown(pandoc, _resultat,
                             dlg.FileName, memeFormat ? _fichierSource : null);
                         _status.Text = "Enregistré : " + dlg.FileName +
                             (memeFormat && !texteIntact
@@ -1507,7 +1634,7 @@ namespace Typonanny
                         _status.ForeColor = Theme.Ok;
                         return;
                     }
-                    File.WriteAllText(dlg.FileName, _apres.Text,
+                    File.WriteAllText(dlg.FileName, _resultat,
                         new UTF8Encoding(_bomSource));
                     _status.Text = "Enregistré : " + dlg.FileName;
                     _status.ForeColor = Theme.Ok;
