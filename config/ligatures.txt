@@ -1,0 +1,46 @@
+﻿# Ligatures œ — un mot LIGATURÉ par ligne (les formes sans
+# ligature sont déduites). « # » commente. Éditez librement,
+# Typonanny relit ce fichier à chaque lancement.
+œuf
+œufs
+bœuf
+bœufs
+cœur
+cœurs
+chœur
+chœurs
+sœur
+sœurs
+œuvre
+œuvres
+œuvrer
+manœuvre
+manœuvres
+manœuvrer
+œil
+œillet
+œillets
+œillade
+œillades
+œsophage
+œstrogène
+œstrogènes
+fœtus
+nœud
+nœuds
+vœu
+vœux
+mœurs
+œcuménique
+œcuméniques
+œnologie
+œnologue
+œdème
+œdèmes
+cœliaque
+Œdipe
+cœlacanthe
+chef-d'œuvre
+chefs-d'œuvre
+hors-d'œuvre
+main-d'œuvre

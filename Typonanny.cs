@@ -729,19 +729,225 @@ namespace Typonanny
 
         // Markdown nettoyé -> document (.docx ou .odt selon l'extension de
         // la destination). Les insécables sont de simples caractères Unicode :
-        // elles survivent à l'aller-retour.
+        // elles survivent à l'aller-retour. « referenceDoc » (optionnel) :
+        // le document d'origine sert de gabarit de styles (--reference-doc),
+        // pour que polices et titres restent ceux de la maison.
         public static void ExporterDepuisMarkdown(string pandoc, string markdown,
             string dest)
+        {
+            ExporterDepuisMarkdown(pandoc, markdown, dest, null);
+        }
+
+        public static void ExporterDepuisMarkdown(string pandoc, string markdown,
+            string dest, string referenceDoc)
         {
             var temp = Path.Combine(Path.GetTempPath(),
                 "typonanny_" + Guid.NewGuid().ToString("N") + ".md");
             try
             {
                 File.WriteAllText(temp, markdown, new UTF8Encoding(false));
-                Executer(pandoc, "--standalone -f markdown -o \"" + dest +
-                    "\" \"" + temp + "\"");
+                var gabarit = referenceDoc != null && File.Exists(referenceDoc)
+                    ? "--reference-doc=\"" + referenceDoc + "\" " : "";
+                Executer(pandoc, "--standalone -f markdown " + gabarit +
+                    "-o \"" + dest + "\" \"" + temp + "\"");
             }
             finally { try { if (File.Exists(temp)) File.Delete(temp); } catch { } }
+        }
+
+        // ------------------------------------- chirurgie .docx (styles 100 %)
+        // Le chemin royal : au lieu de repasser par Markdown (qui simplifie
+        // la mise en forme), on copie le document et on corrige la typographie
+        // DIRECTEMENT dans les nœuds de texte de word/document.xml. Chaque
+        // paragraphe est nettoyé d'un bloc (les règles voient le texte
+        // complet, même fragmenté en runs), puis le texte corrigé est
+        // redistribué sur les runs d'origine par un diff caractère par
+        // caractère : gras, couleurs, polices, styles — rien ne bouge.
+        // Retourne le nombre de corrections appliquées.
+
+        public static int ChirurgieDocx(string source, string dest, OptionsTypo o,
+            HashSet<string> ligaturesOe, HashSet<string> ligaturesAe)
+        {
+            File.Copy(source, dest, true);
+            var corrections = 0;
+            using (var zip = ZipFile.Open(dest, ZipArchiveMode.Update))
+            {
+                var entry = zip.GetEntry("word/document.xml");
+                if (entry == null)
+                    throw new Exception("word/document.xml introuvable : ce .docx est inhabituel");
+                string xml;
+                using (var reader = new StreamReader(entry.Open(), Encoding.UTF8))
+                    xml = reader.ReadToEnd();
+
+                xml = Regex.Replace(xml, @"<w:p\b[^>]*>[\s\S]*?</w:p>",
+                    delegate(Match p)
+                    {
+                        int n;
+                        var remplace = CorrigerParagraphe(p.Value, o,
+                            ligaturesOe, ligaturesAe, out n);
+                        corrections += n;
+                        return remplace;
+                    });
+
+                var octets = new UTF8Encoding(false).GetBytes(xml);
+                using (var sortie = entry.Open())
+                {
+                    sortie.SetLength(0);
+                    sortie.Write(octets, 0, octets.Length);
+                }
+            }
+            return corrections;
+        }
+
+        private static readonly Regex RxNoeudTexte =
+            new Regex(@"<w:t(?:\s[^>]*)?>([\s\S]*?)</w:t>");
+
+        private static string CorrigerParagraphe(string paragraphe, OptionsTypo o,
+            HashSet<string> ligaturesOe, HashSet<string> ligaturesAe, out int corrections)
+        {
+            corrections = 0;
+            var noeuds = RxNoeudTexte.Matches(paragraphe);
+            if (noeuds.Count == 0) return paragraphe;
+
+            var textes = new string[noeuds.Count];
+            var ancien = new StringBuilder();
+            for (var i = 0; i < noeuds.Count; i++)
+            {
+                textes[i] = DecoderEntites(noeuds[i].Groups[1].Value);
+                ancien.Append(textes[i]);
+            }
+            if (ancien.Length == 0) return paragraphe;
+
+            var resultat = Typo.Nettoyer(ancien.ToString(), o, ligaturesOe, ligaturesAe);
+            var nouveau = resultat.Texte;
+            if (nouveau == ancien.ToString()) return paragraphe;
+            foreach (var kv in resultat.Compteurs) corrections += kv.Value;
+
+            var sorties = Redistribuer(textes, ancien.ToString(), nouveau);
+
+            var index = 0;
+            return RxNoeudTexte.Replace(paragraphe, delegate(Match m)
+            {
+                var texte = sorties[index++];
+                return "<w:t xml:space=\"preserve\">" + EncoderEntites(texte) + "</w:t>";
+            });
+        }
+
+        // Répartit le texte corrigé sur les nœuds d'origine : les caractères
+        // inchangés restent dans leur nœud (donc leur run, donc leur style),
+        // les insertions se greffent sur le nœud du caractère précédent.
+        private static string[] Redistribuer(string[] noeuds, string ancien, string nouveau)
+        {
+            var sorties = new StringBuilder[noeuds.Length];
+            for (var i = 0; i < noeuds.Length; i++) sorties[i] = new StringBuilder();
+
+            // propriétaire de chaque caractère de « ancien »
+            var proprietaire = new int[ancien.Length];
+            var pos = 0;
+            for (var i = 0; i < noeuds.Length; i++)
+                foreach (var c in noeuds[i]) proprietaire[pos++] = i;
+
+            var ops = DiffCaracteres(ancien, nouveau);
+            if (ops == null)
+            {
+                // repli (diff trop gros, ne devrait pas arriver) : tout le
+                // texte corrigé dans le premier nœud — moins fin, jamais faux
+                sorties[0].Append(nouveau);
+            }
+            else
+            {
+                var vieux = 0;
+                var dernier = 0;
+                foreach (var op in ops)
+                {
+                    if (op.Type == ' ')
+                    {
+                        dernier = proprietaire[vieux];
+                        sorties[dernier].Append(op.Caractere);
+                        vieux++;
+                    }
+                    else if (op.Type == '-')
+                    {
+                        dernier = proprietaire[vieux];
+                        vieux++;
+                    }
+                    else sorties[dernier].Append(op.Caractere);
+                }
+            }
+
+            var result = new string[noeuds.Length];
+            for (var i = 0; i < noeuds.Length; i++) result[i] = sorties[i].ToString();
+            return result;
+        }
+
+        private class OpCaractere
+        {
+            public char Type;       // ' ' inchangé, '-' supprimé, '+' ajouté
+            public char Caractere;
+            public OpCaractere(char type, char c) { Type = type; Caractere = c; }
+        }
+
+        // Diff de caractères par Myers (même algorithme que One di-version,
+        // au caractère près). Les corrections typo sont locales : d reste
+        // minuscule, c'est quasi instantané. null si ça diverge (garde-fou).
+        private static List<OpCaractere> DiffCaracteres(string a, string b)
+        {
+            var n = a.Length; var m = b.Length;
+            var max = n + m;
+            if (max == 0) return new List<OpCaractere>();
+            var dMax = Math.Min(max, 800);
+
+            var traces = new List<int[]>();
+            var v = new int[2 * max + 1];
+            var trouve = false;
+            var dFinal = 0;
+            for (var d = 0; d <= dMax && !trouve; d++)
+            {
+                traces.Add((int[])v.Clone());
+                for (var k = -d; k <= d; k += 2)
+                {
+                    int x;
+                    if (k == -d || (k != d && v[max + k - 1] < v[max + k + 1]))
+                        x = v[max + k + 1];
+                    else
+                        x = v[max + k - 1] + 1;
+                    var y = x - k;
+                    while (x < n && y < m && a[x] == b[y]) { x++; y++; }
+                    v[max + k] = x;
+                    if (x >= n && y >= m) { trouve = true; dFinal = d; break; }
+                }
+            }
+            if (!trouve) return null;
+
+            var ops = new List<OpCaractere>();
+            var px = n; var py = m;
+            for (var d = dFinal; d > 0; d--)
+            {
+                var vPrec = traces[d];
+                var k = px - py;
+                int kPrec;
+                if (k == -d || (k != d && vPrec[max + k - 1] < vPrec[max + k + 1]))
+                    kPrec = k + 1;
+                else
+                    kPrec = k - 1;
+                var xPrec = vPrec[max + kPrec];
+                var yPrec = xPrec - kPrec;
+                while (px > xPrec && py > yPrec)
+                { px--; py--; ops.Add(new OpCaractere(' ', a[px])); }
+                if (kPrec == k + 1) { py--; ops.Add(new OpCaractere('+', b[py])); }
+                else { px--; ops.Add(new OpCaractere('-', a[px])); }
+            }
+            while (px > 0 && py > 0)
+            { px--; py--; ops.Add(new OpCaractere(' ', a[px])); }
+            while (px > 0) { px--; ops.Add(new OpCaractere('-', a[px])); }
+            while (py > 0) { py--; ops.Add(new OpCaractere('+', b[py])); }
+
+            ops.Reverse();
+            return ops;
+        }
+
+        private static string EncoderEntites(string s)
+        {
+            return s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
         }
 
         private static void Executer(string pandoc, string arguments)
@@ -964,6 +1170,7 @@ namespace Typonanny
         private string _fichierSource;   // pour « Enregistrer sous » et le BOM
         private bool _bomSource = true;
         private string _formatSource;    // "docx"/"odt" si importé via Pandoc
+        private string _texteImporte;    // tel qu'importé, pour détecter les retouches
         private readonly string _appDir =
             Path.GetDirectoryName(Application.ExecutablePath);
 
@@ -1153,19 +1360,21 @@ namespace Typonanny
                         _formatSource = ext.TrimStart('.');
                         _status.Text = chemin + " — importé via Pandoc : " +
                             "l'enregistrement redonnera un ." + _formatSource +
-                            " mis en forme.";
+                            " avec ses styles d'origine.";
                         _status.ForeColor = Theme.Ok;
                     }
                     else
                     {
                         _avant.Text = PontDocuments.ExtraireTexteBrut(chemin);
-                        _formatSource = null;
+                        _formatSource = ext == ".docx" ? "docx" : null;
                         _status.Text = chemin + " — texte extrait sans mise en " +
                             "forme (installez Pandoc via Skadoosh > Installer les " +
-                            "dépendances pour un aller-retour ." +
-                            ext.TrimStart('.') + " complet).";
+                            "dépendances pour l'aperçu structuré)." +
+                            (ext == ".docx" ? " L'enregistrement en .docx garde " +
+                             "quand même les styles (correction directe du document)." : "");
                         _status.ForeColor = Theme.Info;
                     }
+                    _texteImporte = _avant.Text;
                     _bomSource = true;
                 }
                 else
@@ -1175,6 +1384,7 @@ namespace Typonanny
                                  octets[1] == 0xBB && octets[2] == 0xBF;
                     _avant.Text = File.ReadAllText(chemin);
                     _formatSource = null;
+                    _texteImporte = null;
                     _status.Text = chemin;
                     _status.ForeColor = Theme.TexteDoux;
                 }
@@ -1256,18 +1466,49 @@ namespace Typonanny
                 {
                     // jamais l'original : le dialogue propose déjà « -typo »
                     var extOut = Path.GetExtension(dlg.FileName).ToLowerInvariant();
+                    var memeFormat = _formatSource != null &&
+                        extOut == "." + _formatSource &&
+                        _fichierSource != null && File.Exists(_fichierSource);
+                    var texteIntact = _texteImporte != null &&
+                        _avant.Text == _texteImporte;
+
+                    if (extOut == ".docx" && memeFormat && texteIntact &&
+                        !_options.signalerSeulement)
+                    {
+                        // Chemin royal : correction directe du document
+                        // d'origine — gras, couleurs, polices, styles, tout
+                        // reste exactement en place.
+                        var oe = Typo.ChargerLigatures("ligatures.txt",
+                            Typo.LigaturesOeDefaut);
+                        var ae = Typo.ChargerLigatures("ligatures-ae.txt",
+                            Typo.LigaturesAeDefaut);
+                        var n = PontDocuments.ChirurgieDocx(_fichierSource,
+                            dlg.FileName, _options, oe, ae);
+                        _status.Text = "Enregistré : " + dlg.FileName + " — " + n +
+                            " correction(s), styles d'origine conservés à l'identique.";
+                        _status.ForeColor = Theme.Ok;
+                        return;
+                    }
                     if (extOut == ".docx" || extOut == ".odt")
                     {
                         var pandoc = PontDocuments.TrouverPandoc(_appDir);
                         if (pandoc == null)
                             throw new Exception("Pandoc introuvable — enregistrez " +
                                 "en .txt/.md, ou installez Pandoc via Skadoosh.");
+                        // le document d'origine sert de gabarit de styles
                         PontDocuments.ExporterDepuisMarkdown(pandoc, _apres.Text,
-                            dlg.FileName);
+                            dlg.FileName, memeFormat ? _fichierSource : null);
+                        _status.Text = "Enregistré : " + dlg.FileName +
+                            (memeFormat && !texteIntact
+                                ? " — retouches manuelles incluses (mise en forme " +
+                                  "reconstruite depuis le texte, styles du document " +
+                                  "appliqués)."
+                                : ".");
+                        _status.ForeColor = Theme.Ok;
+                        return;
                     }
-                    else
-                        File.WriteAllText(dlg.FileName, _apres.Text,
-                            new UTF8Encoding(_bomSource));
+                    File.WriteAllText(dlg.FileName, _apres.Text,
+                        new UTF8Encoding(_bomSource));
                     _status.Text = "Enregistré : " + dlg.FileName;
                     _status.ForeColor = Theme.Ok;
                 }

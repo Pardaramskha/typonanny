@@ -1,5 +1,19 @@
 # Changelog — Typonanny
 
+## 1.2.0 — 2026-07-19
+
+- **Les styles du .docx sont conservés à l'identique.** Enregistrer un
+  `.docx` corrigé ne repasse plus par Markdown : la typographie est
+  corrigée **directement dans le document** (chirurgie de
+  `word/document.xml`) — chaque paragraphe est nettoyé d'un bloc, puis
+  le texte corrigé est redistribué sur les runs d'origine par un diff
+  caractère par caractère. Gras, italiques, couleurs, polices, styles de
+  paragraphe : rien ne bouge, seuls les caractères fautifs changent.
+  Marche même sans Pandoc.
+- Si le texte importé a été retouché à la main, l'enregistrement repasse
+  par Pandoc avec le document d'origine en **gabarit de styles**
+  (`--reference-doc`) et le statut l'explique. Idem pour les `.odt`.
+
 ## 1.1.0 — 2026-07-19
 
 - **Manuscrits mis en forme : .docx et .odt acceptés.** Avec Pandoc
