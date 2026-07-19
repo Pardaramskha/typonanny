@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Globalization;
@@ -1202,6 +1203,173 @@ namespace Typonanny
         }
     }
 
+    // ----------------------------------- installation automatique du moteur
+    // Pandoc manque ? Cette fenêtre s'ouvre au lancement et le télécharge
+    // directement (dossier de dépendances partagé du hub) — aucune question
+    // posée. Sans lui, l'app marche quand même (extraction brute, rendu
+    // maison) : « Continuer en arrière-plan » rend la main tout de suite.
+
+    public class FenetreInstallation : Form
+    {
+        private class Dep
+        {
+            public string Nom;
+            public string Script;
+            public Label Ligne;
+            public int Etat;   // 0 en attente, 1 en cours, 2 ok, 3 échec
+        }
+
+        private readonly List<Dep> _deps = new List<Dep>();
+        private readonly string _appDir;
+        private readonly BackgroundWorker _worker;
+        private readonly ProgressBar _barre;
+        private readonly RoundedButton _bouton;
+        private readonly Label _intro;
+        private bool _lance;
+
+        // deps : paires { nom lisible, chemin du script d'installation }.
+        public FenetreInstallation(string appDir, List<string[]> deps)
+        {
+            _appDir = appDir;
+            Text = "Premiers préparatifs";
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false; MinimizeBox = false;
+            ControlBox = false;
+            ClientSize = new Size(460, 168 + deps.Count * 26);
+            StartPosition = FormStartPosition.CenterParent;
+            BackColor = Theme.Nuit; ForeColor = Theme.Texte;
+            Font = new Font("Segoe UI", 9f);
+            try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); }
+            catch { }
+
+            _intro = new Label();
+            _intro.Text = "Un moteur manque : téléchargement en cours, rien à " +
+                "faire de votre côté. Une fois suffit — les prochains " +
+                "lancements seront directs.";
+            _intro.ForeColor = Theme.TexteDoux;
+            _intro.SetBounds(20, 14, 420, 40);
+
+            var y = 62;
+            foreach (var d in deps)
+            {
+                var dep = new Dep();
+                dep.Nom = d[0];
+                dep.Script = d[1];
+                dep.Ligne = new Label();
+                dep.Ligne.Text = "…  " + dep.Nom;
+                dep.Ligne.ForeColor = Theme.TexteDoux;
+                dep.Ligne.SetBounds(28, y, 412, 22);
+                Controls.Add(dep.Ligne);
+                _deps.Add(dep);
+                y += 26;
+            }
+
+            _barre = new ProgressBar();
+            _barre.SetBounds(20, y + 8, 420, 8);
+            _barre.Style = ProgressBarStyle.Marquee;
+
+            _bouton = new RoundedButton();
+            _bouton.Text = "Continuer en arrière-plan";
+            _bouton.SetBounds(250, y + 30, 190, 30);
+            Theme.StyleButton(_bouton, false);
+            _bouton.Click += delegate(object s, EventArgs e) { Close(); };
+
+            Controls.Add(_intro);
+            Controls.Add(_barre);
+            Controls.Add(_bouton);
+
+            _worker = new BackgroundWorker();
+            _worker.WorkerReportsProgress = true;
+            _worker.DoWork += Travailler;
+            _worker.ProgressChanged += Avancer;
+            _worker.RunWorkerCompleted += Terminer;
+        }
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            if (_lance) return;
+            _lance = true;
+            _worker.RunWorkerAsync();
+        }
+
+        private void Travailler(object sender, DoWorkEventArgs e)
+        {
+            for (var i = 0; i < _deps.Count; i++)
+            {
+                _worker.ReportProgress(i, 1);
+                var code = LancerScript(_deps[i].Script);
+                _worker.ReportProgress(i, code == 0 ? 2 : 3);
+            }
+        }
+
+        private void Avancer(object sender, ProgressChangedEventArgs e)
+        {
+            if (IsDisposed) return;
+            var dep = _deps[e.ProgressPercentage];
+            dep.Etat = (int)e.UserState;
+            switch (dep.Etat)
+            {
+                case 1:
+                    dep.Ligne.Text = "⏳  " + dep.Nom + " — téléchargement…";
+                    dep.Ligne.ForeColor = Theme.Info;
+                    break;
+                case 2:
+                    dep.Ligne.Text = "✔  " + dep.Nom;
+                    dep.Ligne.ForeColor = Theme.Ok;
+                    break;
+                default:
+                    dep.Ligne.Text = "✖  " + dep.Nom + " — échec (connexion ?)";
+                    dep.Ligne.ForeColor = Theme.Erreur;
+                    break;
+            }
+        }
+
+        private void Terminer(object sender, RunWorkerCompletedEventArgs e)
+        {
+            if (IsDisposed) return;
+            var toutBon = true;
+            foreach (var d in _deps) if (d.Etat != 2) toutBon = false;
+            if (toutBon) { DialogResult = DialogResult.OK; Close(); return; }
+            _intro.Text = "Une installation a échoué — vérifiez la connexion. " +
+                "L'application marche quand même, en mode simplifié ; elle " +
+                "retentera au prochain lancement (détails : logs\\install.log).";
+            _intro.ForeColor = Theme.Erreur;
+            _barre.Visible = false;
+            _bouton.Text = "Continuer quand même";
+        }
+
+        // Script PowerShell caché, toute la sortie journalisée dans
+        // logs\install.log (l'échec muet n'a pas le droit d'exister).
+        private int LancerScript(string script)
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo();
+            psi.FileName = "powershell.exe";
+            psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + script + "\"";
+            psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
+            using (var proc = System.Diagnostics.Process.Start(psi))
+            {
+                var sortie = proc.StandardOutput.ReadToEnd() +
+                             proc.StandardError.ReadToEnd();
+                proc.WaitForExit();
+                try
+                {
+                    var dir = Path.Combine(_appDir, "logs");
+                    if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                    File.AppendAllText(Path.Combine(dir, "install.log"),
+                        "=== " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " +
+                        Path.GetFileName(script) + " — code " + proc.ExitCode +
+                        " ===\r\n" + sortie + "\r\n");
+                }
+                catch { }
+                return proc.ExitCode;
+            }
+        }
+    }
+
     // ------------------------------------------------ fenêtre des règles
 
     public class ReglesDialog : Form
@@ -1502,6 +1670,25 @@ namespace Typonanny
             base.OnHandleCreated(e);
             var dark = 1;
             DwmSetWindowAttribute(Handle, 20, ref dark, 4);
+        }
+
+        private bool _installationFaite;
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            if (_installationFaite) return;
+            _installationFaite = true;
+            // Pandoc absent ? Il se télécharge tout seul (aller-retour .docx
+            // complet et aperçu riche). L'app marche aussi sans lui.
+            if (PontDocuments.TrouverPandoc(_appDir) == null)
+            {
+                var deps = new List<string[]>();
+                deps.Add(new string[] { "Pandoc (documents .docx/.odt, aperçu riche)",
+                    Path.Combine(Path.Combine(_appDir, "scripts"), "install-pandoc.ps1") });
+                using (var dlg = new FenetreInstallation(_appDir, deps))
+                    dlg.ShowDialog(this);
+            }
         }
 
         protected override void OnKeyDown(KeyEventArgs e)

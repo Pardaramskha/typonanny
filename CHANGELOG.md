@@ -1,5 +1,14 @@
 # Changelog — Typonanny
 
+## 1.5.0 — 2026-07-19
+
+- **Pandoc s'installe tout seul.** S'il manque à l'ouverture, la fenêtre
+  « Premiers préparatifs » le télécharge directement (dossier de
+  dépendances partagé, `scripts/install-pandoc.ps1`) — aller-retour
+  `.docx`/`.odt` et aperçu riche garantis dès le premier lancement.
+  « Continuer en arrière-plan » disponible ; sans lui, l'app garde ses
+  modes simplifiés.
+
 ## 1.4.0 — 2026-07-19
 
 - **L'aperçu montre où la nounou est passée.** Nouvelle vue
