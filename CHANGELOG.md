@@ -1,5 +1,16 @@
 # Changelog — Typonanny
 
+## 1.4.0 — 2026-07-19
+
+- **L'aperçu montre où la nounou est passée.** Nouvelle vue
+  « Corrections » (par défaut) dans l'aperçu navigateur, à la manière de
+  One di-version : chaque retouche est surlignée au caractère près —
+  supprimé barré sur fond rouge, inséré sur fond vert (les fines
+  insécables deviennent enfin visibles !), lignes intactes en doux. Un
+  bouton bascule vers la vue « Mise en page » (le rendu riche
+  d'avant). En mode « Signaler seulement », la vue Corrections montre ce
+  qui *serait* corrigé.
+
 ## 1.3.0 — 2026-07-19
 
 - **L'aperçu déménage dans le navigateur.** Nouveau bouton « 👁 Ouvrir

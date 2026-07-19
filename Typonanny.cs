@@ -879,7 +879,7 @@ namespace Typonanny
             return result;
         }
 
-        private class OpCaractere
+        public class OpCaractere
         {
             public char Type;       // ' ' inchangé, '-' supprimé, '+' ajouté
             public char Caractere;
@@ -889,7 +889,8 @@ namespace Typonanny
         // Diff de caractères par Myers (même algorithme que One di-version,
         // au caractère près). Les corrections typo sont locales : d reste
         // minuscule, c'est quasi instantané. null si ça diverge (garde-fou).
-        private static List<OpCaractere> DiffCaracteres(string a, string b)
+        // Public : l'aperçu s'en sert pour surligner les corrections.
+        public static List<OpCaractere> DiffCaracteres(string a, string b)
         {
             var n = a.Length; var m = b.Length;
             var max = n + m;
@@ -1040,20 +1041,28 @@ namespace Typonanny
     }
 
     // --------------------------------------------- aperçu (navigateur)
-    // Le résultat se relit dans le navigateur, mis en page : gras,
-    // italiques, exposants et compagnie rendus proprement, cadratins et
-    // insécables affichés tels quels (UTF-8). Pandoc fait le rendu quand
-    // il est là ; sinon, un mini-rendu Markdown maison prend le relais.
+    // Le résultat se relit dans le navigateur, en deux vues :
+    // « Corrections » (par défaut) surligne chaque retouche à la manière
+    // de One di-version — supprimé barré rouge, inséré vert — grâce au
+    // diff caractère par caractère ; « Mise en page » rend le texte final
+    // proprement (gras, italiques, exposants via Pandoc, repli maison
+    // sinon), cadratins et insécables affichés tels quels (UTF-8).
 
     public static class Apercu
     {
-        public static string Construire(string nomDocument, string texte, string pandoc)
+        // avant = le texte d'origine, corrige = le texte corrigé (même en
+        // mode signalement), finalTexte = ce que Copier/Enregistrer
+        // produiront (identique à corrige, sauf en mode signalement).
+        public static string Construire(string nomDocument, string avant,
+            string corrige, string finalTexte, string pandoc)
         {
-            string corps = null;
+            string mise = null;
             if (pandoc != null)
-                try { corps = PontDocuments.MarkdownVersHtml(pandoc, texte); }
+                try { mise = PontDocuments.MarkdownVersHtml(pandoc, finalTexte); }
                 catch { }
-            if (corps == null) corps = RenduSommaire(texte);
+            if (mise == null) mise = RenduSommaire(finalTexte);
+
+            var corrections = ConstruireDiff(avant, corrige);
 
             var sb = new StringBuilder();
             sb.Append("<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n");
@@ -1065,6 +1074,11 @@ namespace Typonanny
             sb.Append("padding:1.2em 2em;font-family:'Segoe UI',sans-serif}\n");
             sb.Append("header h1{color:#f4d77a;font-size:1.25em;margin:0}\n");
             sb.Append("header p{color:#9aa3c0;margin:.3em 0 0;font-size:.95em}\n");
+            sb.Append("nav{margin-top:.8em}\n");
+            sb.Append("nav button{background:#131a33;color:#e6e6f0;border:1px solid #2a3358;");
+            sb.Append("border-radius:8px;padding:.35em 1em;margin-right:.5em;cursor:pointer;");
+            sb.Append("font-family:'Segoe UI',sans-serif}\n");
+            sb.Append("nav button.actif{background:#d4af37;color:#14141e;border-color:#d4af37}\n");
             sb.Append("main{max-width:44em;margin:2.5em auto;padding:0 1.5em;");
             sb.Append("font-family:Georgia,'Times New Roman',serif;font-size:1.05em;");
             sb.Append("line-height:1.75}\n");
@@ -1074,13 +1088,85 @@ namespace Typonanny
             sb.Append("blockquote{border-left:3px solid #d4af37;margin-left:0;");
             sb.Append("padding-left:1em;color:#9aa3c0}\n");
             sb.Append("code{background:#131a33;padding:.1em .3em;border-radius:4px}\n");
+            sb.Append("pre.diff{white-space:pre-wrap;font-family:inherit;margin:0}\n");
+            sb.Append("del{background:#461a20;color:#e66e78;text-decoration:line-through}\n");
+            sb.Append("ins{background:#183a22;color:#98c379;text-decoration:none}\n");
+            sb.Append(".ctx{color:#9aa3c0}\n");
             sb.Append("</style>\n</head>\n<body>\n<header>\n");
             sb.Append("<h1>⭐ Stargazer — Typonanny</h1>\n");
             sb.Append("<p>").Append(Echapper(nomDocument)).Append("</p>\n");
-            sb.Append("</header>\n<main>\n");
-            sb.Append(corps);
-            sb.Append("\n</main>\n</body>\n</html>\n");
+            sb.Append("<nav>\n");
+            sb.Append("<button id=\"bc\" class=\"actif\" onclick=\"voir('c')\">Corrections</button>\n");
+            sb.Append("<button id=\"bm\" onclick=\"voir('m')\">Mise en page</button>\n");
+            sb.Append("</nav>\n</header>\n");
+            sb.Append("<main id=\"corrections\">\n").Append(corrections).Append("\n</main>\n");
+            sb.Append("<main id=\"mise\" style=\"display:none\">\n").Append(mise).Append("\n</main>\n");
+            sb.Append("<script>\nfunction voir(v){\n");
+            sb.Append("document.getElementById('corrections').style.display=v=='c'?'block':'none';\n");
+            sb.Append("document.getElementById('mise').style.display=v=='m'?'block':'none';\n");
+            sb.Append("document.getElementById('bc').className=v=='c'?'actif':'';\n");
+            sb.Append("document.getElementById('bm').className=v=='m'?'actif':'';\n");
+            sb.Append("}\n</script>\n</body>\n</html>\n");
             return sb.ToString();
+        }
+
+        // La vue « Corrections » : le nettoyage ne touche jamais aux sauts
+        // de ligne, donc chaque ligne se compare à son homologue — diff
+        // caractère par caractère sur les lignes modifiées, le reste en doux.
+        private static string ConstruireDiff(string avant, string corrige)
+        {
+            var sb = new StringBuilder();
+            sb.Append("<pre class=\"diff\">");
+            if (avant == corrige)
+            {
+                sb.Append("<span class=\"ctx\">Aucune correction : ce texte était " +
+                    "déjà impeccable.</span>\n");
+                sb.Append(Echapper(corrige));
+                sb.Append("</pre>");
+                return sb.ToString();
+            }
+            var la = avant.Replace("\r\n", "\n").Split('\n');
+            var lc = corrige.Replace("\r\n", "\n").Split('\n');
+            if (la.Length == lc.Length)
+            {
+                for (var i = 0; i < la.Length; i++)
+                {
+                    if (la[i] == lc[i])
+                        sb.Append("<span class=\"ctx\">").Append(Echapper(la[i]))
+                          .Append("</span>\n");
+                    else
+                    {
+                        RenduLigneDiff(sb, la[i], lc[i]);
+                        sb.Append('\n');
+                    }
+                }
+            }
+            else RenduLigneDiff(sb, avant, corrige);   // prudence (ne devrait pas arriver)
+            sb.Append("</pre>");
+            return sb.ToString();
+        }
+
+        private static void RenduLigneDiff(StringBuilder sb, string a, string b)
+        {
+            var ops = PontDocuments.DiffCaracteres(a, b);
+            if (ops == null)   // diff trop gros : montrer le nouveau, marqué
+            {
+                sb.Append("<ins>").Append(Echapper(b)).Append("</ins>");
+                return;
+            }
+            // regrouper les opérations contiguës de même type
+            var i = 0;
+            while (i < ops.Count)
+            {
+                var type = ops[i].Type;
+                var bloc = new StringBuilder();
+                while (i < ops.Count && ops[i].Type == type)
+                { bloc.Append(ops[i].Caractere); i++; }
+                var texte = Echapper(bloc.ToString());
+                if (type == '-') sb.Append("<del>").Append(texte).Append("</del>");
+                else if (type == '+') sb.Append("<ins>").Append(texte).Append("</ins>");
+                else sb.Append(texte);
+            }
         }
 
         // Repli sans Pandoc : l'essentiel du Markdown (titres, gras,
@@ -1262,7 +1348,9 @@ namespace Typonanny
             ref int value, int size);
 
         private readonly TextBox _avant;
-        private string _resultat;   // texte nettoyé (aperçu, copie, export)
+        private string _resultat;      // ce que Copier/Enregistrer produisent
+        private string _avantNettoye;  // le texte tel qu'au dernier nettoyage
+        private string _corrige;       // le texte corrigé (même en signalement)
         private readonly Label _stats;
         private readonly ListBox _rapport;
         private readonly Label _status;
@@ -1505,6 +1593,8 @@ namespace Typonanny
             var oe = Typo.ChargerLigatures("ligatures.txt", Typo.LigaturesOeDefaut);
             var ae = Typo.ChargerLigatures("ligatures-ae.txt", Typo.LigaturesAeDefaut);
             var r = Typo.Nettoyer(_avant.Text, _options, oe, ae);
+            _avantNettoye = _avant.Text;
+            _corrige = r.Texte;
             _resultat = _options.signalerSeulement ? _avant.Text : r.Texte;
 
             _rapport.Items.Clear();
@@ -1547,7 +1637,7 @@ namespace Typonanny
                     ? Path.GetFileName(_fichierSource) : "texte collé";
                 var pandoc = PontDocuments.TrouverPandoc(_appDir);
                 File.WriteAllText(chemin,
-                    Apercu.Construire(nomDoc, _resultat, pandoc),
+                    Apercu.Construire(nomDoc, _avantNettoye, _corrige, _resultat, pandoc),
                     new UTF8Encoding(true));
                 System.Diagnostics.Process.Start(chemin);
                 _status.Text = "Aperçu ouvert dans le navigateur — " + chemin;
