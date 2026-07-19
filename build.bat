@@ -10,6 +10,7 @@ if not exist "%CSC%" set CSC=%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe
   /reference:System.dll ^
   /reference:System.Drawing.dll ^
   /reference:System.Windows.Forms.dll ^
+  /reference:System.IO.Compression.dll ^
   Typonanny.cs
 
 if %ERRORLEVEL%==0 (

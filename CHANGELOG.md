@@ -1,5 +1,18 @@
 # Changelog — Typonanny
 
+## 1.1.0 — 2026-07-19
+
+- **Manuscrits mis en forme : .docx et .odt acceptés.** Avec Pandoc
+  (installé d'un clic via Skadoosh, dossier de dépendances partagé du
+  hub), le document entre en Markdown éditable — sans coupures de ligne
+  artificielles — et « Enregistrer sous » redonne un `.docx`/`.odt`
+  `-typo` avec gras, titres et listes conservés ; les insécables et
+  ligatures survivent à l'aller-retour. Sans Pandoc, le texte brut est
+  extrait nativement du XML (lecture seule, sortie `.txt`/`.md`) et le
+  statut explique comment obtenir l'aller-retour complet.
+- **Plus de plafond à 32 767 caractères** : les zones de texte acceptent
+  désormais les vrais gros manuscrits (limite WinForms par défaut levée).
+
 ## 1.0.0 — 2026-07-19
 
 Première version de la nounou typographique — fusion des codenames

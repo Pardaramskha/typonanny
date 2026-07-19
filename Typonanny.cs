@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -670,6 +671,145 @@ namespace Typonanny
         }
     }
 
+    // ------------------------------------------- documents (.docx / .odt)
+    // Le pont vers les manuscrits mis en forme. Deux niveaux :
+    // 1. Pandoc disponible (dossier de dépendances partagé du hub, installé
+    //    d'un clic depuis Skadoosh) : aller-retour complet — le document
+    //    entre en Markdown éditable, ressort dans son format d'origine,
+    //    mise en forme (gras, titres, listes…) conservée.
+    // 2. Sans Pandoc : extraction native du texte brut depuis le XML
+    //    (word/document.xml, content.xml) — lecture seule, sortie .txt/.md.
+
+    public static class PontDocuments
+    {
+        // Recherche : dossier partagé (<hub>\dependencies) → bin\ local → PATH.
+        public static string TrouverPandoc(string appDir)
+        {
+            try
+            {
+                var hub = Path.GetDirectoryName(Path.GetDirectoryName(appDir));
+                if (hub != null && File.Exists(Path.Combine(hub, "Stargazer.exe")))
+                {
+                    var partage = Path.Combine(Path.Combine(hub, "dependencies"), "pandoc.exe");
+                    if (File.Exists(partage)) return partage;
+                }
+            }
+            catch { }
+            var local = Path.Combine(Path.Combine(appDir, "bin"), "pandoc.exe");
+            if (File.Exists(local)) return local;
+            var chemins = Environment.GetEnvironmentVariable("PATH");
+            if (chemins != null)
+                foreach (var dir in chemins.Split(';'))
+                {
+                    if (dir.Trim().Length == 0) continue;
+                    try
+                    {
+                        var full = Path.Combine(dir.Trim(), "pandoc.exe");
+                        if (File.Exists(full)) return full;
+                    }
+                    catch { }
+                }
+            return null;
+        }
+
+        // Document -> Markdown éditable. --wrap=none : pas de retours à la
+        // ligne artificiels qui perturberaient les règles typographiques.
+        public static string ImporterEnMarkdown(string pandoc, string document)
+        {
+            var temp = Path.Combine(Path.GetTempPath(),
+                "typonanny_" + Guid.NewGuid().ToString("N") + ".md");
+            try
+            {
+                Executer(pandoc, "--wrap=none -t markdown -o \"" + temp +
+                    "\" \"" + document + "\"");
+                return File.ReadAllText(temp);
+            }
+            finally { try { if (File.Exists(temp)) File.Delete(temp); } catch { } }
+        }
+
+        // Markdown nettoyé -> document (.docx ou .odt selon l'extension de
+        // la destination). Les insécables sont de simples caractères Unicode :
+        // elles survivent à l'aller-retour.
+        public static void ExporterDepuisMarkdown(string pandoc, string markdown,
+            string dest)
+        {
+            var temp = Path.Combine(Path.GetTempPath(),
+                "typonanny_" + Guid.NewGuid().ToString("N") + ".md");
+            try
+            {
+                File.WriteAllText(temp, markdown, new UTF8Encoding(false));
+                Executer(pandoc, "--standalone -f markdown -o \"" + dest +
+                    "\" \"" + temp + "\"");
+            }
+            finally { try { if (File.Exists(temp)) File.Delete(temp); } catch { } }
+        }
+
+        private static void Executer(string pandoc, string arguments)
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo();
+            psi.FileName = pandoc;
+            psi.Arguments = arguments;
+            psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
+            psi.RedirectStandardError = true;
+            using (var proc = System.Diagnostics.Process.Start(psi))
+            {
+                var err = proc.StandardError.ReadToEnd();
+                proc.WaitForExit();
+                if (proc.ExitCode != 0)
+                {
+                    var ligne = err.Trim().Split('\n')[0].Trim();
+                    throw new Exception("Pandoc a échoué" +
+                        (ligne.Length > 0 ? " : " + ligne : "."));
+                }
+            }
+        }
+
+        // Sans Pandoc : le texte brut du document, paragraphe par paragraphe
+        // (docx et odt sont des ZIP contenant le texte en XML).
+        public static string ExtraireTexteBrut(string document)
+        {
+            var ext = Path.GetExtension(document).ToLowerInvariant();
+            var entree = ext == ".docx" ? "word/document.xml" : "content.xml";
+            string xml = null;
+            using (var fs = new FileStream(document, FileMode.Open, FileAccess.Read))
+            using (var zip = new ZipArchive(fs, ZipArchiveMode.Read))
+                foreach (var entry in zip.Entries)
+                    if (string.Equals(entry.FullName, entree, StringComparison.OrdinalIgnoreCase))
+                    {
+                        using (var reader = new StreamReader(entry.Open(), Encoding.UTF8))
+                            xml = reader.ReadToEnd();
+                        break;
+                    }
+            if (xml == null)
+                throw new Exception("document illisible : " + entree + " introuvable");
+
+            xml = Regex.Replace(xml, @"</w:p>|</text:p>|</text:h>", "\n");
+            xml = Regex.Replace(xml, @"<w:tab[^>]*/>|<text:tab[^>]*/>", "\t");
+            xml = Regex.Replace(xml, @"<w:br[^>]*/>|<text:line-break[^>]*/>", "\n");
+            xml = Regex.Replace(xml, @"<[^>]+>", "");
+            xml = DecoderEntites(xml);
+            // au plus une ligne vide entre paragraphes
+            xml = Regex.Replace(xml, @"\n{3,}", "\n\n");
+            return xml.Trim();
+        }
+
+        private static string DecoderEntites(string s)
+        {
+            s = Regex.Replace(s, @"&#x([0-9A-Fa-f]+);", delegate(Match m)
+            {
+                return char.ConvertFromUtf32(Convert.ToInt32(m.Groups[1].Value, 16));
+            });
+            s = Regex.Replace(s, @"&#(\d+);", delegate(Match m)
+            {
+                return char.ConvertFromUtf32(int.Parse(m.Groups[1].Value));
+            });
+            return s.Replace("&lt;", "<").Replace("&gt;", ">")
+                    .Replace("&quot;", "\"").Replace("&apos;", "'")
+                    .Replace("&amp;", "&");
+        }
+    }
+
     // ------------------------------------------------ fenêtre des règles
 
     public class ReglesDialog : Form
@@ -823,6 +963,9 @@ namespace Typonanny
         private OptionsTypo _options;
         private string _fichierSource;   // pour « Enregistrer sous » et le BOM
         private bool _bomSource = true;
+        private string _formatSource;    // "docx"/"odt" si importé via Pandoc
+        private readonly string _appDir =
+            Path.GetDirectoryName(Application.ExecutablePath);
 
         public MainForm(string fichierInitial)
         {
@@ -944,6 +1087,7 @@ namespace Typonanny
             t.BorderStyle = BorderStyle.FixedSingle;
             t.Font = new Font("Segoe UI", 10f);
             t.AcceptsReturn = true;
+            t.MaxLength = 0;   // sans ça, WinForms tronque à 32 767 caractères
             return t;
         }
 
@@ -986,7 +1130,8 @@ namespace Typonanny
             using (var dlg = new OpenFileDialog())
             {
                 dlg.Title = "Choisissez le texte à confier à la nounou";
-                dlg.Filter = "Textes (*.txt;*.md)|*.txt;*.md|Tous les fichiers|*.*";
+                dlg.Filter = "Textes et documents (*.txt;*.md;*.docx;*.odt)|" +
+                    "*.txt;*.md;*.docx;*.odt|Tous les fichiers|*.*";
                 if (dlg.ShowDialog(this) == DialogResult.OK)
                     ChargerFichier(dlg.FileName);
             }
@@ -996,12 +1141,44 @@ namespace Typonanny
         {
             try
             {
-                var octets = File.ReadAllBytes(chemin);
-                _bomSource = octets.Length >= 3 && octets[0] == 0xEF &&
-                             octets[1] == 0xBB && octets[2] == 0xBF;
-                _avant.Text = File.ReadAllText(chemin);
+                var ext = Path.GetExtension(chemin).ToLowerInvariant();
+                if (ext == ".docx" || ext == ".odt")
+                {
+                    // Manuscrit mis en forme : Pandoc si possible (aller-
+                    // retour complet), sinon texte brut extrait du XML.
+                    var pandoc = PontDocuments.TrouverPandoc(_appDir);
+                    if (pandoc != null)
+                    {
+                        _avant.Text = PontDocuments.ImporterEnMarkdown(pandoc, chemin);
+                        _formatSource = ext.TrimStart('.');
+                        _status.Text = chemin + " — importé via Pandoc : " +
+                            "l'enregistrement redonnera un ." + _formatSource +
+                            " mis en forme.";
+                        _status.ForeColor = Theme.Ok;
+                    }
+                    else
+                    {
+                        _avant.Text = PontDocuments.ExtraireTexteBrut(chemin);
+                        _formatSource = null;
+                        _status.Text = chemin + " — texte extrait sans mise en " +
+                            "forme (installez Pandoc via Skadoosh > Installer les " +
+                            "dépendances pour un aller-retour ." +
+                            ext.TrimStart('.') + " complet).";
+                        _status.ForeColor = Theme.Info;
+                    }
+                    _bomSource = true;
+                }
+                else
+                {
+                    var octets = File.ReadAllBytes(chemin);
+                    _bomSource = octets.Length >= 3 && octets[0] == 0xEF &&
+                                 octets[1] == 0xBB && octets[2] == 0xBF;
+                    _avant.Text = File.ReadAllText(chemin);
+                    _formatSource = null;
+                    _status.Text = chemin;
+                    _status.ForeColor = Theme.TexteDoux;
+                }
                 _fichierSource = chemin;
-                _status.Text = chemin;
                 _apres.Text = "";
                 _rapport.Items.Clear();
             }
@@ -1064,13 +1241,33 @@ namespace Typonanny
                         "-typo" + Path.GetExtension(_fichierSource);
                 }
                 else dlg.FileName = "texte-typo.txt";
-                dlg.Filter = "Texte (*.txt)|*.txt|Markdown (*.md)|*.md|Tous les fichiers|*.*";
+                if (_formatSource == "docx")
+                    dlg.Filter = "Document Word (*.docx)|*.docx|" +
+                        "Document OpenDocument (*.odt)|*.odt|" +
+                        "Texte (*.txt)|*.txt|Markdown (*.md)|*.md|Tous les fichiers|*.*";
+                else if (_formatSource == "odt")
+                    dlg.Filter = "Document OpenDocument (*.odt)|*.odt|" +
+                        "Document Word (*.docx)|*.docx|" +
+                        "Texte (*.txt)|*.txt|Markdown (*.md)|*.md|Tous les fichiers|*.*";
+                else
+                    dlg.Filter = "Texte (*.txt)|*.txt|Markdown (*.md)|*.md|Tous les fichiers|*.*";
                 if (dlg.ShowDialog(this) != DialogResult.OK) return;
                 try
                 {
                     // jamais l'original : le dialogue propose déjà « -typo »
-                    File.WriteAllText(dlg.FileName, _apres.Text,
-                        new UTF8Encoding(_bomSource));
+                    var extOut = Path.GetExtension(dlg.FileName).ToLowerInvariant();
+                    if (extOut == ".docx" || extOut == ".odt")
+                    {
+                        var pandoc = PontDocuments.TrouverPandoc(_appDir);
+                        if (pandoc == null)
+                            throw new Exception("Pandoc introuvable — enregistrez " +
+                                "en .txt/.md, ou installez Pandoc via Skadoosh.");
+                        PontDocuments.ExporterDepuisMarkdown(pandoc, _apres.Text,
+                            dlg.FileName);
+                    }
+                    else
+                        File.WriteAllText(dlg.FileName, _apres.Text,
+                            new UTF8Encoding(_bomSource));
                     _status.Text = "Enregistré : " + dlg.FileName;
                     _status.ForeColor = Theme.Ok;
                 }
