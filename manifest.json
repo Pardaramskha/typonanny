@@ -1,0 +1,7 @@
+{
+  "id": "typonanny",
+  "nom": "Typonanny",
+  "description": "Nettoie la typographie française (insécables, guillemets, cadratins…) et compte signes, mots et feuillets.",
+  "app": "Typonanny.app",
+  "motsCles": ["typographie", "texte", "correction", "insécables", "guillemets", "signes", "feuillets", "comptage", "édition", "relecture"]
+}

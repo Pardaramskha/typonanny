@@ -1,0 +1,7 @@
+﻿# Ligatures æ (règle désactivée par défaut, voir Règles…).
+ex æquo
+curriculum vitæ
+tænia
+nævus
+cæcum
+et cætera
