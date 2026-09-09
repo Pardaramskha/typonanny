@@ -1267,6 +1267,7 @@ function styleApercu() {
   s += '#papier .n{margin-left:auto;color:var(--intact);font-size:.9em}\n';
   s += '#papier .reset{margin-top:.6em;padding:.3em .8em;font-size:.9em}\n';
   s += '#papier .vide{color:var(--intact);font-style:italic}\n';
+  s += '#papier .rien{color:var(--intact);padding:.15em 0;opacity:.75}\n';
   s += '@media (max-width:70em){#papier{position:static;width:auto;margin:1em 1.5em 0}}\n';
   return s;
 }
@@ -1290,9 +1291,26 @@ function papierApercu(regles) {
     s += '<label class="filtre"><input type="checkbox" checked data-c="' + e.cle +
       '" onchange="filtrer()">' + echapper(e.libelle) + '<span class="n">' + e.n + '</span></label>\n';
   });
+  // les règles qui n'ont rien eu à corriger : dites, pour qu'on ne les
+  // cherche pas (un texte venu de Word a déjà ses apostrophes courbes)
+  var vues = regles.map(function (e) { return e.cle; });
+  var rien = '';
+  TOUTES_LES_REGLES.forEach(function (r) {
+    if (vues.indexOf(r[0]) < 0) rien += '<div class="rien">' + r[1] + '</div>\n';
+  });
+  if (rien) s += '<h3>Rien à corriger</h3>\n' + rien;
   s += '</div>\n</aside>\n';
   return s;
 }
+
+// Les règles, dans l'ordre du moteur (mêmes clés que etaper()).
+var TOUTES_LES_REGLES = [
+  ['espaces', 'Espaces'], ['apostrophes', 'Apostrophes courbes'],
+  ['ellipses', 'Points de suspension et « etc. »'], ['guillemets', 'Guillemets français'],
+  ['tiretsDialogue', 'Tirets de dialogue'], ['intervalles', 'Intervalles'],
+  ['insecables', 'Insécables de ponctuation'], ['insecablesUnites', "Insécables d'unités"],
+  ['milliers', 'Milliers en fine'], ['ligaturesOe', 'Ligatures œ'],
+  ['ligaturesAe', 'Ligatures æ'], ['dimensions', 'Dimensions'], ['ordinaux', 'Ordinaux']];
 
 function scriptApercu() {
   var s = '';
@@ -1302,7 +1320,9 @@ function scriptApercu() {
   s += "panneau:'#ffffff',bordure:'#d9d4c7',or:'#b8912a',orclair:'#8a6a12',lien:'#2f5fc4'}};\n";
   s += "var CLES=['fond','texte','intact','ajout','suppr'];\n";
   s += "var etat={theme:'sombre',couleurs:{},off:[],plie:false};\n";
-  s += "try{var s=localStorage.getItem('typonanny.apercu');if(s)etat=Object.assign(etat,JSON.parse(s));}catch(e){}\n";
+  // le thème et les couleurs se retiennent, PAS le filtre : un aperçu
+  // s'ouvre toujours avec toutes les corrections visibles
+  s += "try{var s=localStorage.getItem('typonanny.apercu');if(s)etat=Object.assign(etat,JSON.parse(s));}catch(e){}\netat.off=[];\n";
   s += "function sauver(){try{localStorage.setItem('typonanny.apercu',JSON.stringify(etat));}catch(e){}}\n";
   s += "function appliquer(){var p=PRESETS[etat.theme]||PRESETS.sombre;var r=document.documentElement.style;\n";
   s += "for(var k in p)r.setProperty('--'+k,p[k]);\n";

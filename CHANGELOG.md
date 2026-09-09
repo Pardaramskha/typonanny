@@ -1,5 +1,16 @@
 ﻿# Changelog — Typonanny
 
+## 1.7.3 — 2026-09-09
+
+- **Le filtre de l'aperçu ne se mémorise plus.** Une règle décochée dans
+  le paper restait masquée pour tous les aperçus suivants (le navigateur
+  s'en souvenait) : on pouvait croire à des corrections manquantes. Chaque
+  aperçu s'ouvre désormais avec toutes les corrections visibles ; le thème
+  et les couleurs, eux, restent mémorisés.
+- **« Rien à corriger ».** Le paper liste aussi les règles qui n'ont rien
+  eu à faire sur ce texte — un manuscrit venu de Word a souvent déjà ses
+  apostrophes courbes et ses points de suspension.
+
 ## 1.7.2 — 2026-09-09
 
 - **Plus d'attributs Markdown sur les titres importés.** Un titre stylé

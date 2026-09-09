@@ -93,6 +93,7 @@ namespace Typonanny
             sb.Append("#papier .n{margin-left:auto;color:var(--intact);font-size:.9em}\n");
             sb.Append("#papier .reset{margin-top:.6em;padding:.3em .8em;font-size:.9em}\n");
             sb.Append("#papier .vide{color:var(--intact);font-style:italic}\n");
+            sb.Append("#papier .rien{color:var(--intact);padding:.15em 0;opacity:.75}\n");
             sb.Append("@media (max-width:70em){#papier{position:static;width:auto;margin:1em 1.5em 0}}\n");
             return sb.ToString();
         }
@@ -121,9 +122,29 @@ namespace Typonanny
                 sb.Append("<label class=\"filtre\"><input type=\"checkbox\" checked data-c=\"")
                   .Append(e.Cle).Append("\" onchange=\"filtrer()\">").Append(Echapper(e.Libelle))
                   .Append("<span class=\"n\">").Append(e.Texte).Append("</span></label>\n");
+            // les règles qui n'ont rien eu à corriger : dites, pour qu'on ne
+            // les cherche pas (un texte venu de Word a déjà ses apostrophes
+            // courbes, par exemple)
+            var vues = new HashSet<string>();
+            foreach (var e in regles) vues.Add(e.Cle);
+            var rien = new StringBuilder();
+            for (var i = 0; i < ToutesLesRegles.GetLength(0); i++)
+                if (!vues.Contains(ToutesLesRegles[i, 0]))
+                    rien.Append("<div class=\"rien\">").Append(ToutesLesRegles[i, 1]).Append("</div>\n");
+            if (rien.Length > 0)
+                sb.Append("<h3>Rien à corriger</h3>\n").Append(rien);
             sb.Append("</div>\n</aside>\n");
             return sb.ToString();
         }
+
+        // Les règles, dans l'ordre du moteur (mêmes clés que Typo.Etaper).
+        private static readonly string[,] ToutesLesRegles = new string[,] {
+            { "espaces", "Espaces" }, { "apostrophes", "Apostrophes courbes" },
+            { "ellipses", "Points de suspension et « etc. »" }, { "guillemets", "Guillemets français" },
+            { "tiretsDialogue", "Tirets de dialogue" }, { "intervalles", "Intervalles" },
+            { "insecables", "Insécables de ponctuation" }, { "insecablesUnites", "Insécables d'unités" },
+            { "milliers", "Milliers en fine" }, { "ligaturesOe", "Ligatures œ" },
+            { "ligaturesAe", "Ligatures æ" }, { "dimensions", "Dimensions" }, { "ordinaux", "Ordinaux" } };
 
         private static string Script()
         {
@@ -134,7 +155,9 @@ namespace Typonanny
             sb.Append("panneau:'#ffffff',bordure:'#d9d4c7',or:'#b8912a',orclair:'#8a6a12',lien:'#2f5fc4'}};\n");
             sb.Append("var CLES=['fond','texte','intact','ajout','suppr'];\n");
             sb.Append("var etat={theme:'sombre',couleurs:{},off:[],plie:false};\n");
-            sb.Append("try{var s=localStorage.getItem('typonanny.apercu');if(s)etat=Object.assign(etat,JSON.parse(s));}catch(e){}\n");
+            // le thème et les couleurs se retiennent, PAS le filtre : un aperçu
+            // s'ouvre toujours avec toutes les corrections visibles
+            sb.Append("try{var s=localStorage.getItem('typonanny.apercu');if(s)etat=Object.assign(etat,JSON.parse(s));}catch(e){}\netat.off=[];\n");
             sb.Append("function sauver(){try{localStorage.setItem('typonanny.apercu',JSON.stringify(etat));}catch(e){}}\n");
             sb.Append("function appliquer(){var p=PRESETS[etat.theme]||PRESETS.sombre;var r=document.documentElement.style;\n");
             sb.Append("for(var k in p)r.setProperty('--'+k,p[k]);\n");
