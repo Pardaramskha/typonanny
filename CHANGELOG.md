@@ -1,5 +1,14 @@
 ﻿# Changelog — Typonanny
 
+## 1.7.2 — 2026-09-09
+
+- **Plus d'attributs Markdown sur les titres importés.** Un titre stylé
+  dans Word ou LibreOffice (« Titre de Chapitre »…) ressortait en
+  `# Mouvement 21 {#mouvement-21 .Titre-de-Chapitre}`. L'import demande à
+  Pandoc un Markdown sans aucune syntaxe d'attributs (titres, spans, divs,
+  liens, code) : ces marques ne servaient à rien à l'aller-retour, la
+  chirurgie .docx conservant les styles de toute façon.
+
 ## 1.7.1 — 2026-09-09
 
 - **Une seule vue dans l'aperçu.** Plus de bascule « Corrections » /

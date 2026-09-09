@@ -86,6 +86,17 @@ namespace Typonanny
         // separateurs : les lignes qui ne contiennent qu'un séparateur de
         // texte (« *** ») reviennent échappées (\*\*\*) ; on les déséchappe
         // pour l'édition, EchapperSeparateurs les rétablit avant Pandoc.
+        // Le Markdown demandé à Pandoc à l'import : sans « smart » (voir
+        // ci-dessus) et sans aucune syntaxe d'attributs — un titre stylé
+        // « Titre de Chapitre » dans Word ressortait en
+        // « # Mouvement 21 {#mouvement-21 .Titre-de-Chapitre} », une
+        // aberration pour un manuscrit ; ces marques ne servent à rien à
+        // l'aller-retour (la chirurgie .docx garde les styles, et l'export
+        // Pandoc ne sait de toute façon pas les rendre au document).
+        public const string FormatImport = "markdown-smart-header_attributes-auto_identifiers" +
+            "-bracketed_spans-native_divs-native_spans-fenced_divs-raw_attribute" +
+            "-link_attributes-inline_code_attributes-fenced_code_attributes";
+
         public static string ImporterEnMarkdown(string pandoc, string document,
             string[] separateurs)
         {
@@ -93,7 +104,7 @@ namespace Typonanny
                 "typonanny_" + Guid.NewGuid().ToString("N") + ".md");
             try
             {
-                Executer(pandoc, "--wrap=none -t markdown-smart -o \"" + temp +
+                Executer(pandoc, "--wrap=none -t " + FormatImport + " -o \"" + temp +
                     "\" \"" + document + "\"");
                 return DesechapperSeparateurs(File.ReadAllText(temp), separateurs);
             }
