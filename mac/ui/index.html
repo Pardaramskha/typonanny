@@ -1,0 +1,1382 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Typonanny</title>
+<link rel="stylesheet" href="sg/theme.css">
+<style>
+  /* Couleurs de statut de la famille (Theme.cs) */
+  :root {
+    --ok: #98c379;
+    --erreur: #e66e78;
+    --info: #7aa2f7;
+  }
+
+  body { display: flex; flex-direction: column; overflow: hidden; padding: 0 20px; }
+
+  #titre {
+    flex: none; margin-top: 14px;
+    font-size: 16px; font-weight: 600; color: var(--or-clair);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  #barre { flex: none; display: flex; gap: 8px; margin-top: 10px; }
+  #barre button {
+    height: 30px; padding: 0 6px; flex: none;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #btn-ouvrir { width: 130px; }
+  #btn-coller { width: 76px; }
+  #btn-nettoyer { width: 120px; }
+  #btn-apercu { width: 140px; }
+  #btn-copier { width: 80px; }
+  #btn-enregistrer { width: 140px; }
+  #btn-regles { width: 90px; }
+
+  #l-avant {
+    flex: none; margin: 12px 0 4px; color: var(--texte-doux);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  #avant {
+    flex: 1; min-height: 60px; resize: none;
+    font-size: 13.5px; line-height: 1.45;
+    white-space: pre-wrap;
+  }
+
+  #stats {
+    flex: none; height: 20px; line-height: 20px; margin-top: 8px;
+    color: var(--or-clair);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  #rapport { flex: none; height: 84px; margin-top: 4px; border-radius: 0; }
+  #rapport .ligne { white-space: pre; padding: 2px 8px; }
+
+  #status {
+    flex: none; height: 20px; line-height: 20px; margin: 6px 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: var(--texte-doux);
+  }
+  #status.doux { color: var(--texte-doux); }
+  #status.ok { color: var(--ok); }
+  #status.erreur { color: var(--erreur); }
+  #status.info { color: var(--info); }
+
+  /* --------------------------------------------------- surcouches */
+  .voile {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(5, 8, 20, .72);
+    display: none; align-items: center; justify-content: center;
+  }
+  .voile.ouvert { display: flex; }
+  .dialogue {
+    background: var(--nuit);
+    border: 1px solid var(--bordure);
+    border-radius: 10px;
+    box-shadow: 0 18px 60px rgba(0,0,0,.6);
+    padding: 18px 20px;
+    max-height: 86vh; overflow: auto;
+  }
+  .dialogue h2 { margin: 0 0 12px; font-size: 15px; }
+  .dialogue .boutons {
+    display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;
+  }
+
+  /* règles */
+  .section {
+    color: var(--or-clair); font-weight: 600; font-size: 13.5px;
+    margin: 12px 0 8px;
+  }
+  .section:first-of-type { margin-top: 0; }
+  #voile-regles label { display: block; padding: 3px 0; }
+  #grille-regles {
+    display: grid; grid-template-columns: 1fr 1fr; column-gap: 8px;
+  }
+  #lbl-signaler { color: var(--or-clair); margin-top: 10px; }
+  #note-regles { color: var(--texte-doux); margin-top: 10px; font-size: 12px; }
+
+  /* premiers préparatifs */
+  #prep-intro { color: var(--texte-doux); margin-bottom: 12px; }
+  #prep-intro.erreur { color: var(--erreur); }
+  #prep-dep { margin: 0 0 14px 8px; white-space: pre; }
+  #prep-dep.attente { color: var(--texte-doux); }
+  #prep-dep.encours { color: var(--info); }
+  #prep-dep.ok { color: var(--ok); }
+  #prep-dep.echec { color: var(--erreur); }
+</style>
+</head>
+<body>
+
+<div id="titre">La nounou de votre typographie française.</div>
+
+<div id="barre">
+  <button id="btn-ouvrir">Ouvrir un texte…</button>
+  <button id="btn-coller">Coller</button>
+  <button id="btn-nettoyer" class="primaire">✨  Nettoyer</button>
+  <button id="btn-apercu">👁  Ouvrir l'aperçu</button>
+  <button id="btn-copier">Copier</button>
+  <button id="btn-enregistrer">Enregistrer sous…</button>
+  <button id="btn-regles">Règles…</button>
+</div>
+
+<div id="l-avant">Votre texte (collez, déposez ou ouvrez) — le résultat se relit via « Ouvrir l'aperçu », mis en page dans le navigateur :</div>
+
+<textarea id="avant" spellcheck="false"></textarea>
+
+<div id="stats">—</div>
+<div id="rapport" class="liste"></div>
+<div id="status"></div>
+
+<!-- ------------------------------------------------- règles -->
+<div class="voile" id="voile-regles">
+  <div class="dialogue" style="width:500px">
+    <h2>Règles typographiques — Typonanny</h2>
+    <div class="section">Préréglage</div>
+    <label><input type="radio" name="pre" id="pre-in"> Imprimerie nationale (strict) — fine avant ; ! ?, pleine avant : et dans « »</label>
+    <label><input type="radio" name="pre" id="pre-souple"> Souple / maison — fine insécable partout</label>
+    <label><input type="radio" name="pre" id="pre-minimal"> Minimal — évidences seules (apostrophes, …, espaces)</label>
+    <div class="section">Règles (le préréglage Minimal ignore celles marquées °)</div>
+    <div id="grille-regles"></div>
+    <label id="lbl-signaler"><input type="checkbox" id="chk-signaler"> Signaler seulement : rapport complet, aucune correction écrite</label>
+    <div id="note-regles">Les listes de ligatures sont de simples fichiers texte dans config/ — éditez-les dans TextEdit, Typonanny les relit à chaque lancement. Le reste des réglages vit dans config/typo.conf.</div>
+    <div class="boutons">
+      <button class="primaire" id="btn-regles-ok">Enregistrer</button>
+      <button id="btn-regles-annuler">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- ------------------------------------- premiers préparatifs -->
+<div class="voile" id="voile-preparatifs">
+  <div class="dialogue" style="width:460px">
+    <h2>Premiers préparatifs</h2>
+    <div id="prep-intro">Un moteur manque : téléchargement en cours, rien à faire de votre côté. Une fois suffit — les prochains lancements seront directs.</div>
+    <div id="prep-dep" class="attente"></div>
+    <progress id="prep-barre"></progress>
+    <div class="boutons">
+      <button id="btn-prep-continuer">Continuer en arrière-plan</button>
+    </div>
+  </div>
+</div>
+
+<script src="sg/app-shell.js"></script>
+<script>
+'use strict';
+
+// ====================================================================
+//  Typonanny — la nounou typographique du français, moteur côté page.
+//  Portage fidèle de Typonanny.cs : mêmes règles, mêmes glyphes
+//  (U+202F fine insécable / U+00A0 insécable pleine), mêmes chaînes.
+// ====================================================================
+
+var FINE = ' ';   // espace fine insécable
+var NBSP = ' ';   // espace insécable pleine
+
+var env = null;        // SG.env()
+var tempDir = '';      // NSTemporaryDirectory
+
+// ------------------------------------------------------------ état
+// Mêmes noms qu'en C# : _resultat est ce que Copier/Enregistrer
+// produiront ; toute modification du texte l'invalide.
+
+var _resultat = null;       // dernier nettoyage (null = périmé)
+var _avantNettoye = null;   // le texte tel qu'au dernier nettoyage
+var _corrige = null;        // le texte corrigé (même en signalement)
+var _fichierSource = null;  // pour « Enregistrer sous » et le BOM
+var _bomSource = true;
+var _formatSource = null;   // "docx"/"odt" si importé
+var _texteImporte = null;   // tel qu'importé, pour détecter les retouches
+var _options = null;
+
+var avant = document.getElementById('avant');
+var statsEl = document.getElementById('stats');
+var rapportEl = document.getElementById('rapport');
+var statusEl = document.getElementById('status');
+
+function setStatus(texte, classe) {
+  statusEl.textContent = texte;
+  statusEl.className = classe || 'doux';
+}
+
+function q(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
+function extDe(p) {
+  var nom = SG.basename(p);
+  var i = nom.lastIndexOf('.');
+  return i > 0 ? nom.slice(i).toLowerCase() : '';
+}
+function stemDe(p) {
+  var nom = SG.basename(p);
+  var i = nom.lastIndexOf('.');
+  return i > 0 ? nom.slice(0, i) : nom;
+}
+function guid() {
+  var s = '';
+  for (var i = 0; i < 32; i++) s += Math.floor(Math.random() * 16).toString(16);
+  return s;
+}
+function stripBom(t) {
+  return t && t.charCodeAt(0) === 0xFEFF ? t.slice(1) : t;
+}
+async function shellOk(script) {
+  var r = await SG.shell(script);
+  if (!r.ok) throw new Error(r.err || 'commande échouée');
+  return r.out || '';
+}
+
+// ================================================== options (OptionsTypo)
+
+var LIBELLES_REGLES = [
+  'Espaces (doubles, fins de ligne)',
+  "Apostrophes courbes '",
+  'Points de suspension … et « etc. »',
+  'Guillemets français « » °',
+  'Tirets de dialogue — °',
+  'Intervalles 1914–1918 °',
+  'Insécables de ponctuation ; ! ? : « » °',
+  "Insécables d'unités 10 %, 10 €, 12 kg °",
+  'Milliers en fine 10 000 °',
+  'Ligatures œ (liste : config/ligatures.txt)',
+  'Ligatures æ (config/ligatures-ae.txt)',
+  'Dimensions 10 × 15 °',
+  'Ordinaux 2ème → 2e',
+  'Signaler les majuscules à accentuer (État, À…)'
+];
+var CLES_REGLES = ['espaces', 'apostrophes', 'ellipses', 'guillemets',
+  'tiretsDialogue', 'intervalles', 'insecables', 'insecablesUnites',
+  'milliers', 'ligaturesOe', 'ligaturesAe', 'dimensions', 'ordinaux',
+  'signalerMajuscules'];
+
+function optionsParDefaut() {
+  return {
+    prereglage: 'in',
+    espaces: true, apostrophes: true, ellipses: true, guillemets: true,
+    tiretsDialogue: true, intervalles: true, insecables: true,
+    insecablesUnites: true, milliers: true, ligaturesOe: true,
+    ligaturesAe: false, dimensions: true, ordinaux: true,
+    signalerMajuscules: true, signalerSeulement: false
+  };
+}
+
+// Glyphes dépendant du préréglage (IN strict / souple).
+function avantPonctuationHaute(o) { return o.prereglage === 'souple' ? FINE : FINE; }
+function avantDeuxPoints(o) { return o.prereglage === 'souple' ? FINE : NBSP; }
+function interieurGuillemets(o) { return o.prereglage === 'souple' ? FINE : NBSP; }
+function estMinimal(o) { return o.prereglage === 'minimal'; }
+
+// ============================================= config (typo.conf, BOM)
+
+function cheminConfig(fichier) { return env.appDir + '/config/' + fichier; }
+
+async function chargerOptions() {
+  var o = optionsParDefaut();
+  var t = (await SG.read(cheminConfig('typo.conf'))).text;
+  if (t === null) return o;
+  stripBom(t).split(/\r?\n/).forEach(function (brute) {
+    var ligne = brute.trim();
+    if (!ligne || ligne.charAt(0) === '#') return;
+    var i = ligne.indexOf('=');
+    if (i <= 0) return;
+    var cle = ligne.slice(0, i).trim();
+    var val = ligne.slice(i + 1).trim();
+    var actif = val === '1' || val === 'true';
+    if (cle === 'prereglage') o.prereglage = val;
+    else if (cle === 'signalerSeulement') o.signalerSeulement = actif;
+    else if (CLES_REGLES.indexOf(cle) >= 0) o[cle] = actif;
+  });
+  return o;
+}
+
+async function sauverOptions(o) {
+  var lignes = ['# Réglages Typonanny — clé=valeur (1 actif / 0 inactif).',
+    'prereglage=' + o.prereglage];
+  CLES_REGLES.forEach(function (cle) {
+    lignes.push(cle + '=' + (o[cle] ? '1' : '0'));
+  });
+  lignes.push('signalerSeulement=' + (o.signalerSeulement ? '1' : '0'));
+  await SG.write(cheminConfig('typo.conf'), '﻿' + lignes.join('\n') + '\n');
+}
+
+// ============================================ ligatures (listes blanches)
+
+var LIGATURES_OE_DEFAUT = [
+  'œuf', 'œufs', 'bœuf', 'bœufs', 'cœur', 'cœurs', 'chœur', 'chœurs',
+  'sœur', 'sœurs', 'œuvre', 'œuvres', 'œuvrer', 'manœuvre', 'manœuvres',
+  'manœuvrer', 'œil', 'œillet', 'œillets', 'œillade', 'œillades',
+  'œsophage', 'œstrogène', 'œstrogènes', 'fœtus', 'nœud', 'nœuds',
+  'vœu', 'vœux', 'mœurs', 'œcuménique', 'œcuméniques', 'œnologie',
+  'œnologue', 'œdème', 'œdèmes', 'cœliaque', 'Œdipe', 'cœlacanthe',
+  "chef-d'œuvre", "chefs-d'œuvre", "hors-d'œuvre", "main-d'œuvre"
+];
+var LIGATURES_AE_DEFAUT = [
+  'ex æquo', 'curriculum vitæ', 'tænia', 'nævus', 'cæcum', 'et cætera'
+];
+
+// Relues à chaque nettoyage. Fichier absent -> défauts embarqués ;
+// présent mais illisible/vide -> liste vide (pas de retour aux défauts).
+async function chargerLigatures(fichier, defauts) {
+  var chemin = cheminConfig(fichier);
+  if (!(await SG.exists(chemin)).exists) return defauts.slice();
+  var t = (await SG.read(chemin)).text;
+  if (t === null) return [];
+  var result = [];
+  stripBom(t).split(/\r?\n/).forEach(function (brute) {
+    var ligne = brute.trim();
+    if (!ligne || ligne.charAt(0) === '#') return;
+    if (result.indexOf(ligne) < 0) result.push(ligne);
+  });
+  return result;
+}
+
+// Créés au démarrage s'ils manquent (UTF-8 avec BOM), mêmes en-têtes
+// que la version Windows.
+async function ecrireLigaturesParDefaut() {
+  try {
+    var oe = cheminConfig('ligatures.txt');
+    if (!(await SG.exists(oe)).exists)
+      await SG.write(oe, '﻿' + [
+        '# Ligatures œ — un mot LIGATURÉ par ligne (les formes sans',
+        '# ligature sont déduites). « # » commente. Éditez librement,',
+        '# Typonanny relit ce fichier à chaque lancement.'
+      ].concat(LIGATURES_OE_DEFAUT).join('\n') + '\n');
+    var ae = cheminConfig('ligatures-ae.txt');
+    if (!(await SG.exists(ae)).exists)
+      await SG.write(ae, '﻿' +
+        ['# Ligatures æ (règle désactivée par défaut, voir Règles…).']
+          .concat(LIGATURES_AE_DEFAUT).join('\n') + '\n');
+  } catch (e) { }
+}
+
+// =============================================== comptage (Signe des temps)
+
+// fr-FR « N0 » : séparateur de milliers insécable.
+function n0(n) {
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, NBSP);
+}
+
+function statistiques(texte) {
+  if (!texte) return '—';
+  var sec = 0, sansEspaces = 0;
+  for (var i = 0; i < texte.length; i++) {
+    var c = texte.charAt(i);
+    if (c === '\r' || c === '\n') continue;
+    sec++;
+    if (!/\s/.test(c)) sansEspaces++;
+  }
+  var mots = (texte.match(/[\p{L}\p{Nd}]+(?:['’\-][\p{L}\p{Nd}]+)*/gu) || []).length;
+  var feuillets = (sec / 1500).toFixed(1).replace('.', ',');
+  var minutes = Math.ceil(mots / 220);
+  return 'SEC : ' + n0(sec) + '   ·   sans espaces : ' + n0(sansEspaces) +
+    '   ·   mots : ' + n0(mots) + '   ·   feuillets (1 500) : ' + feuillets +
+    '   ·   lecture : ~' + minutes + ' min';
+}
+
+// Ventilation par chapitre si le texte a des titres Markdown (#).
+function statistiquesParChapitre(texte) {
+  var result = [];
+  var lignes = texte.replace(/\r\n/g, '\n').split('\n');
+  var titre = null, sb = '';
+  lignes.forEach(function (ligne) {
+    if (/^#{1,6}\s/.test(ligne)) {
+      if (titre !== null) result.push(titre + ' — ' + statistiques(sb));
+      titre = ligne.replace(/^[# ]+/, '');
+      sb = '';
+    } else if (titre !== null) sb += ligne + '\n';
+  });
+  if (titre !== null) result.push(titre + ' — ' + statistiques(sb));
+  return result;
+}
+
+// ==================================================== moteur (Typo.Nettoyer)
+
+// Remplace et compte les VRAIS changements (idempotence : remplacer une
+// fine par la même fine ne compte pas et ne modifie rien).
+function remplacerCompte(texte, rx, remplacement, dejaBon) {
+  var n = 0;
+  var t = texte.replace(rx, function () {
+    var m = arguments[0];
+    var produit = typeof remplacement === 'function'
+      ? remplacement.apply(null, arguments) : remplacement;
+    if (m !== produit && (dejaBon == null || m !== dejaBon)) n++;
+    return produit;
+  });
+  return { t: t, n: n };
+}
+
+// -------------------------------------------------- zones protégées
+
+var MOTIFS_PROTEGES = [
+  /```[\s\S]*?```/g,                    // bloc de code md
+  /`[^`\n]+`/g,                          // span de code md
+  /(https?|ftp):\/\/\S+/gi,
+  /\bwww\.\S+/gi,
+  /[\w.+-]+@[\w-]+\.[\w.-]+/g,           // e-mail
+  /\b[A-Za-z]:\\\S+/g,                   // chemin Windows
+  /\\\\\S+/g,                            // chemin UNC
+  /\b\d{1,2}:\d{2}(?::\d{2})?\b/g,       // heure 10:30
+  /\b\d+:\d+\b/g                         // ratio 16:9
+];
+
+function masquer(texte, zones) {
+  // point de départ en zone privée, au-delà de tout PUA déjà présent
+  var basePua = 0xE000;
+  for (var i = 0; i < texte.length; i++) {
+    var c = texte.charCodeAt(i);
+    if (c >= 0xE000 && c <= 0xF8FF && c >= basePua) basePua = c + 1;
+  }
+  var travail = texte;
+  MOTIFS_PROTEGES.forEach(function (rx) {
+    travail = travail.replace(rx, function (m) {
+      zones.push(m);
+      return String.fromCharCode(basePua + zones.length - 1);
+    });
+  });
+  return travail;
+}
+
+function demasquer(texte, zones) {
+  if (!zones.length) return texte;
+  var basePua = -1;
+  // retrouver la base : le plus petit jeton présent
+  for (var i = 0; i < texte.length; i++) {
+    var c = texte.charCodeAt(i);
+    if (c >= 0xE000 && c <= 0xF8FF && (basePua < 0 || c < basePua)) basePua = c;
+  }
+  if (basePua < 0) return texte;
+  var sb = '';
+  for (var j = 0; j < texte.length; j++) {
+    var cc = texte.charCodeAt(j);
+    var idx = cc - basePua;
+    if (cc >= 0xE000 && cc <= 0xF8FF && idx >= 0 && idx < zones.length)
+      sb += zones[idx];
+    else sb += texte.charAt(j);
+  }
+  return sb;
+}
+
+// -------------------------------------------------- ligatures
+
+function estLettre(c) { return c.toLowerCase() !== c.toUpperCase(); }
+function estMinuscule(c) { return estLettre(c) && c === c.toLowerCase(); }
+function estMajuscule(c) { return estLettre(c) && c === c.toUpperCase(); }
+
+function respecterCasse(original, corrige) {
+  var toutMaj = true;
+  for (var i = 0; i < original.length; i++) {
+    var c = original.charAt(i);
+    if (estLettre(c) && estMinuscule(c)) { toutMaj = false; break; }
+  }
+  if (toutMaj && original.length > 1) return corrige.toUpperCase();
+  if (estMajuscule(original.charAt(0)) && !estMajuscule(corrige.charAt(0)))
+    return corrige.charAt(0).toUpperCase() + corrige.slice(1);
+  return corrige;
+}
+
+// Ligatures par liste blanche : le mot ligaturé (« cœur ») donne la
+// forme à chercher (« coeur »). La casse d'origine est respectée.
+function ligaturer(texte, liste, digramme, ligature) {
+  if (!liste || !liste.length) return { t: texte, n: 0 };
+  var table = {};
+  liste.forEach(function (mot) {
+    var plat = mot.split(ligature).join(digramme)
+      .split(ligature.toUpperCase()).join(digramme.toUpperCase());
+    table[plat.toLowerCase()] = mot;
+  });
+  var n = 0;
+  var rx = new RegExp('[\\p{L}]*' + digramme + '[\\p{L}]*', 'giu');
+  var t = texte.replace(rx, function (m) {
+    var bon = table[m.toLowerCase()];
+    if (bon === undefined) return m;
+    n++;
+    return respecterCasse(m, bon);
+  });
+  return { t: t, n: n };
+}
+
+// -------------------------------------------------- le nettoyage
+
+function nettoyerTexte(texte, o, ligaturesOe, ligaturesAe) {
+  var r = { texte: '', compteurs: [], signalements: [] };
+  function compter(categorie, n) {
+    if (n > 0) r.compteurs.push([categorie, n]);
+  }
+
+  // (1) masquer les zones protégées : URL, e-mails, chemins, code
+  // Markdown, heures/ratios. Jetons en zone privée Unicode.
+  var zones = [];
+  var travail = masquer(texte, zones);
+  var rc;
+
+  // (2) espaces bruts
+  if (o.espaces) {
+    rc = remplacerCompte(travail, /[ \t]+(?=\r?$)/gm, '');
+    travail = rc.t; compter('espace(s) en fin de ligne', rc.n);
+    rc = remplacerCompte(travail, /(?<=[^ \n])  +(?=[^ \n])/g, ' ');
+    travail = rc.t; compter('espace(s) en double', rc.n);
+  }
+
+  // (3) glyphes simples
+  if (o.apostrophes) {
+    var nApo = travail.split("'").length - 1;
+    if (nApo > 0) travail = travail.split("'").join('’');
+    compter('apostrophe(s) courbée(s)', nApo);
+  }
+  if (o.ellipses) {
+    rc = remplacerCompte(travail, /\betc(\.\.\.+|…)/g, 'etc.');
+    travail = rc.t; compter('« etc. » recadré(s)', rc.n);
+    var m4 = travail.match(/\.{4,}/);
+    if (m4) r.signalements.push('« ' + m4[0] +
+      ' » laissé tel quel (plus de trois points, souvent voulu)');
+    rc = remplacerCompte(travail, /(?<!\.)\.\.\.(?!\.)/g, '…');
+    travail = rc.t; var nEll = rc.n;
+    rc = remplacerCompte(travail, /(?<!\.)\. \. \.(?!\.)/g, '…');
+    travail = rc.t;
+    compter('points de suspension « … »', nEll + rc.n);
+  }
+  if (o.guillemets && !estMinimal(o)) {
+    var droits = travail.split('"').length - 1;
+    if (droits % 2 !== 0)
+      r.signalements.push('nombre impair de guillemets droits : conversion « » non appliquée');
+    else if (droits > 0) {
+      var nbspG = interieurGuillemets(o);
+      var nG = 0;
+      travail = travail.replace(/"[   ]*([^"\n]*?)[   ]*"/g,
+        function (m, g1) {
+          nG++;
+          return '«' + nbspG + g1 + nbspG + '»';
+        });
+      compter('paire(s) de guillemets « »', nG);
+    }
+  }
+
+  // (4) tirets
+  if (o.tiretsDialogue && !estMinimal(o)) {
+    rc = remplacerCompte(travail, /^([ \t]*)-{1,2}[ \t]+/gm,
+      function (m, g1) { return g1 + '— '; });
+    travail = rc.t; compter('tiret(s) de dialogue « — »', rc.n);
+  }
+  if (o.intervalles && !estMinimal(o)) {
+    rc = remplacerCompte(travail, /(?<![\d\-–])(\d{1,4})-(\d{1,4})(?![\d\-–])/g,
+      function (m, a, b) { return a + '–' + b; });
+    travail = rc.t; compter('intervalle(s) en demi-cadratin', rc.n);
+  }
+
+  // (5) insécables de ponctuation
+  if (o.insecables && !estMinimal(o)) {
+    var fine = avantPonctuationHaute(o);
+    var nbspDeux = avantDeuxPoints(o);
+    var nbsp = interieurGuillemets(o);
+
+    rc = remplacerCompte(travail,
+      /(?<=[^\s;!?:«  ])[   ]*(?=[;!?])/g, fine, fine);
+    travail = rc.t; compter('insécable(s) fine(s) avant ; ! ?', rc.n);
+
+    rc = remplacerCompte(travail,
+      /(?<=[^\s:«  ])[   ]*(?=:(?=\s|$))/g,
+      nbspDeux, nbspDeux);
+    travail = rc.t; compter('insécable(s) avant « : »', rc.n);
+
+    rc = remplacerCompte(travail, /(?<=«)[   ]*(?=\S)/g, nbsp, nbsp);
+    travail = rc.t; var nOuv = rc.n;
+    rc = remplacerCompte(travail, /(?<=\S)[   ]*(?=»)/g, nbsp, nbsp);
+    travail = rc.t;
+    compter('insécable(s) de guillemets', nOuv + rc.n);
+  }
+  if (o.insecablesUnites && !estMinimal(o)) {
+    rc = remplacerCompte(travail, /(?<=\d)[   ]*(?=[%€$])/g,
+      NBSP, NBSP);
+    travail = rc.t; var nPc = rc.n;
+    rc = remplacerCompte(travail,
+      /(?<=\d)[   ]+(?=(?:kg|km|cm|mm|mn|min|ans|an|h|g|m|s|l|cl|ml|ko|mo|go|Ko|Mo|Go)\b)/g,
+      NBSP, NBSP);
+    travail = rc.t;
+    compter("insécable(s) d'unités (%, €, kg…)", nPc + rc.n);
+  }
+  if (o.milliers && !estMinimal(o)) {
+    rc = remplacerCompte(travail, /(?<=\b\d{1,3}) (?=\d{3}(?!\d))/g, FINE);
+    travail = rc.t; compter('séparateur(s) de milliers en fine', rc.n);
+  }
+
+  // (6) ligatures & divers
+  if (o.ligaturesOe) {
+    rc = ligaturer(travail, ligaturesOe, 'oe', 'œ');
+    travail = rc.t; compter('ligature(s) œ', rc.n);
+  }
+  if (o.ligaturesAe) {
+    rc = ligaturer(travail, ligaturesAe, 'ae', 'æ');
+    travail = rc.t; compter('ligature(s) æ', rc.n);
+  }
+  if (o.dimensions && !estMinimal(o)) {
+    rc = remplacerCompte(travail,
+      /(?<=\d)[   ]*[xX][   ]*(?=\d)/g,
+      NBSP + '×' + NBSP, NBSP + '×' + NBSP);
+    travail = rc.t; compter('dimension(s) en ×', rc.n);
+  }
+  if (o.ordinaux) {
+    var nOrd = 0;
+    rc = remplacerCompte(travail, /\b1ères\b/g, '1res');
+    travail = rc.t; nOrd += rc.n;
+    rc = remplacerCompte(travail, /\b1ère\b/g, '1re');
+    travail = rc.t; nOrd += rc.n;
+    rc = remplacerCompte(travail, /\b2ndes?\b/g, '2de');
+    travail = rc.t; nOrd += rc.n;
+    rc = remplacerCompte(travail, /\b(\d+)i?èmes?\b/g,
+      function (m, g1) { return g1 + 'e'; });
+    travail = rc.t; nOrd += rc.n;
+    compter('ordinal(aux) recadré(s)', nOrd);
+  }
+  if (o.signalerMajuscules) {
+    var rxMaj = /(?<=^|[.!?…]\s+)(Etat|Etats|Ecole|Ecoles|Eglise|Eglises|Elève|Eleve|Ere|Ete|Etude|Etudes|Epoque|Evidemment|Egalement|A)(?=\s)/gm;
+    var mm;
+    while ((mm = rxMaj.exec(travail)) !== null) {
+      var mot = mm[1];
+      var propose = mot === 'A' ? 'À'
+        : /^(Et|Ec|Eg|El|Ep|Ev|Er)/.test(mot) ? 'É' + mot.slice(1) : mot;
+      r.signalements.push('majuscule à accentuer ? « ' + mot + ' » → « ' +
+        propose + ' » (non corrigé d\'office)');
+      if (r.signalements.length > 20) break;
+    }
+  }
+
+  // (7) réinjecter les zones protégées
+  r.texte = demasquer(travail, zones);
+  return r;
+}
+
+// ============================================ diff de Myers (au caractère)
+
+// Même algorithme que la version Windows (et One di-version). Budget
+// d <= 800 ; null si ça diverge (garde-fou : « moins fin, jamais faux »).
+function diffCaracteres(a, b) {
+  var n = a.length, m = b.length;
+  var max = n + m;
+  if (max === 0) return [];
+  var dMax = Math.min(max, 800);
+
+  var traces = [];
+  var v = new Array(2 * max + 1);
+  for (var z = 0; z < v.length; z++) v[z] = 0;
+  var trouve = false, dFinal = 0;
+  for (var d = 0; d <= dMax && !trouve; d++) {
+    traces.push(v.slice());
+    for (var k = -d; k <= d; k += 2) {
+      var x;
+      if (k === -d || (k !== d && v[max + k - 1] < v[max + k + 1]))
+        x = v[max + k + 1];
+      else
+        x = v[max + k - 1] + 1;
+      var y = x - k;
+      while (x < n && y < m && a.charAt(x) === b.charAt(y)) { x++; y++; }
+      v[max + k] = x;
+      if (x >= n && y >= m) { trouve = true; dFinal = d; break; }
+    }
+  }
+  if (!trouve) return null;
+
+  var ops = [];
+  var px = n, py = m;
+  for (var dd = dFinal; dd > 0; dd--) {
+    var vPrec = traces[dd];
+    var kk = px - py;
+    var kPrec;
+    if (kk === -dd || (kk !== dd && vPrec[max + kk - 1] < vPrec[max + kk + 1]))
+      kPrec = kk + 1;
+    else
+      kPrec = kk - 1;
+    var xPrec = vPrec[max + kPrec];
+    var yPrec = xPrec - kPrec;
+    while (px > xPrec && py > yPrec)
+    { px--; py--; ops.push({ t: ' ', c: a.charAt(px) }); }
+    if (kPrec === kk + 1) { py--; ops.push({ t: '+', c: b.charAt(py) }); }
+    else { px--; ops.push({ t: '-', c: a.charAt(px) }); }
+  }
+  while (px > 0 && py > 0) { px--; py--; ops.push({ t: ' ', c: a.charAt(px) }); }
+  while (px > 0) { px--; ops.push({ t: '-', c: a.charAt(px) }); }
+  while (py > 0) { py--; ops.push({ t: '+', c: b.charAt(py) }); }
+
+  ops.reverse();
+  return ops;
+}
+
+// =========================================== documents (.docx / .odt)
+
+async function trouverPandoc() {
+  // mêmes trois crans que Windows : dépendances partagées du hub ->
+  // bin/ local -> PATH (deps.sh les connaît tous les deux derniers)
+  if ((await SG.exists(env.depsDir + '/bin/pandoc')).exists)
+    return env.depsDir + '/bin/pandoc';
+  if ((await SG.exists(env.appDir + '/bin/pandoc')).exists)
+    return env.appDir + '/bin/pandoc';
+  var r = await SG.shell('/bin/zsh ' +
+    q(env.macRoot + '/scripts/deps.sh') + ' where pandoc');
+  var p = r.ok ? r.out.trim() : '';
+  return p || null;
+}
+
+async function executerPandoc(pandoc, args) {
+  var r = await SG.shell(q(pandoc) + ' ' + args);
+  if (!r.ok) {
+    var ligne = String(r.err || '').trim().split('\n')[0].trim();
+    throw new Error('Pandoc a échoué' + (ligne ? ' : ' + ligne : '.'));
+  }
+}
+
+// Document -> Markdown éditable. --wrap=none : pas de retours à la
+// ligne artificiels qui perturberaient les règles typographiques.
+async function importerEnMarkdown(pandoc, document_) {
+  var temp = tempDir + 'typonanny_' + guid() + '.md';
+  try {
+    await executerPandoc(pandoc,
+      '--wrap=none -t markdown -o ' + q(temp) + ' ' + q(document_));
+    var t = (await SG.read(temp)).text;
+    if (t === null) throw new Error('conversion Pandoc vide');
+    return stripBom(t);
+  } finally { SG.shell('rm -f ' + q(temp)); }
+}
+
+// Markdown nettoyé -> document ; « referenceDoc » = le document
+// d'origine sert de gabarit de styles (--reference-doc).
+async function exporterDepuisMarkdown(pandoc, markdown, dest, referenceDoc) {
+  var temp = tempDir + 'typonanny_' + guid() + '.md';
+  try {
+    await SG.write(temp, markdown);   // UTF-8 sans BOM
+    var gabarit = '';
+    if (referenceDoc && (await SG.exists(referenceDoc)).exists)
+      gabarit = '--reference-doc=' + q(referenceDoc) + ' ';
+    await executerPandoc(pandoc, '--standalone -f markdown ' + gabarit +
+      '-o ' + q(dest) + ' ' + q(temp));
+  } finally { SG.shell('rm -f ' + q(temp)); }
+}
+
+// Markdown -> fragment HTML pour l'aperçu. -raw_html : une balise
+// égarée dans un manuscrit doit s'afficher, pas s'exécuter.
+async function markdownVersHtml(pandoc, markdown) {
+  var tempMd = tempDir + 'typonanny_' + guid() + '.md';
+  var tempHtml = tempMd.slice(0, -3) + '.html';
+  try {
+    await SG.write(tempMd, markdown);
+    await executerPandoc(pandoc, '--wrap=none -f markdown-raw_html -t html -o ' +
+      q(tempHtml) + ' ' + q(tempMd));
+    var t = (await SG.read(tempHtml)).text;
+    if (t === null) throw new Error('conversion Pandoc vide');
+    return stripBom(t);
+  } finally { SG.shell('rm -f ' + q(tempMd) + ' ' + q(tempHtml)); }
+}
+
+function decoderEntites(s) {
+  s = s.replace(/&#x([0-9A-Fa-f]+);/g, function (m, h) {
+    return String.fromCodePoint(parseInt(h, 16));
+  });
+  s = s.replace(/&#(\d+);/g, function (m, d) {
+    return String.fromCodePoint(parseInt(d, 10));
+  });
+  return s.split('&lt;').join('<').split('&gt;').join('>')
+    .split('&quot;').join('"').split('&apos;').join("'")
+    .split('&amp;').join('&');
+}
+
+function encoderEntites(s) {
+  return s.split('&').join('&amp;').split('<').join('&lt;').split('>').join('&gt;');
+}
+
+// Sans Pandoc : le texte brut du document, paragraphe par paragraphe
+// (docx et odt sont des ZIP contenant le texte en XML).
+async function extraireTexteBrut(document_) {
+  var ext = extDe(document_);
+  var entree = ext === '.docx' ? 'word/document.xml' : 'content.xml';
+  var tmp = tempDir + 'typonanny_zip_' + guid();
+  var xml;
+  try {
+    await shellOk('ditto -x -k ' + q(document_) + ' ' + q(tmp));
+    xml = (await SG.read(tmp + '/' + entree)).text;
+  } finally { SG.shell('rm -rf ' + q(tmp)); }
+  if (xml === null)
+    throw new Error('document illisible : ' + entree + ' introuvable');
+  xml = stripBom(xml);
+  xml = xml.replace(/<\/w:p>|<\/text:p>|<\/text:h>/g, '\n');
+  xml = xml.replace(/<w:tab[^>]*\/>|<text:tab[^>]*\/>/g, '\t');
+  xml = xml.replace(/<w:br[^>]*\/>|<text:line-break[^>]*\/>/g, '\n');
+  xml = xml.replace(/<[^>]+>/g, '');
+  xml = decoderEntites(xml);
+  // au plus une ligne vide entre paragraphes
+  xml = xml.replace(/\n{3,}/g, '\n\n');
+  return xml.trim();
+}
+
+// ------------------------------------- chirurgie .docx (styles 100 %)
+// Le chemin royal : la typographie est corrigée DIRECTEMENT dans les
+// nœuds de texte de word/document.xml, puis redistribuée sur les runs
+// d'origine par le diff de Myers — gras, couleurs, polices : rien ne
+// bouge. Marche même sans Pandoc.
+
+var RX_NOEUD_TEXTE = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g;
+
+// Répartit le texte corrigé sur les nœuds d'origine : les caractères
+// inchangés restent dans leur nœud (donc leur run, donc leur style),
+// les insertions se greffent sur le nœud du caractère précédent.
+function redistribuer(noeuds, ancien, nouveau) {
+  var sorties = noeuds.map(function () { return ''; });
+
+  // propriétaire de chaque caractère de « ancien »
+  var proprietaire = new Array(ancien.length);
+  var pos = 0;
+  noeuds.forEach(function (t, i) {
+    for (var j = 0; j < t.length; j++) proprietaire[pos++] = i;
+  });
+
+  var ops = diffCaracteres(ancien, nouveau);
+  if (ops === null) {
+    // repli (diff trop gros, ne devrait pas arriver) : tout le texte
+    // corrigé dans le premier nœud — moins fin, jamais faux
+    sorties[0] = nouveau;
+  } else {
+    var vieux = 0, dernier = 0;
+    ops.forEach(function (op) {
+      if (op.t === ' ') {
+        dernier = proprietaire[vieux];
+        sorties[dernier] += op.c;
+        vieux++;
+      } else if (op.t === '-') {
+        dernier = proprietaire[vieux];
+        vieux++;
+      } else sorties[dernier] += op.c;
+    });
+  }
+  return sorties;
+}
+
+function corrigerParagraphe(paragraphe, o, ligaturesOe, ligaturesAe) {
+  var noeuds = [];
+  var mm;
+  RX_NOEUD_TEXTE.lastIndex = 0;
+  while ((mm = RX_NOEUD_TEXTE.exec(paragraphe)) !== null)
+    noeuds.push(decoderEntites(mm[1]));
+  if (!noeuds.length) return { t: paragraphe, n: 0 };
+
+  var ancien = noeuds.join('');
+  if (!ancien.length) return { t: paragraphe, n: 0 };
+
+  var resultat = nettoyerTexte(ancien, o, ligaturesOe, ligaturesAe);
+  var nouveau = resultat.texte;
+  if (nouveau === ancien) return { t: paragraphe, n: 0 };
+  var corrections = 0;
+  resultat.compteurs.forEach(function (kv) { corrections += kv[1]; });
+
+  var sorties = redistribuer(noeuds, ancien, nouveau);
+
+  var index = 0;
+  var t = paragraphe.replace(RX_NOEUD_TEXTE, function () {
+    var texte = sorties[index++];
+    return '<w:t xml:space="preserve">' + encoderEntites(texte) + '</w:t>';
+  });
+  return { t: t, n: corrections };
+}
+
+async function chirurgieDocx(source, dest, o, ligaturesOe, ligaturesAe) {
+  var tmp = tempDir + 'typonanny_docx_' + guid();
+  try {
+    await shellOk('ditto -x -k ' + q(source) + ' ' + q(tmp));
+    var xml = (await SG.read(tmp + '/word/document.xml')).text;
+    if (xml === null)
+      throw new Error('word/document.xml introuvable : ce .docx est inhabituel');
+    xml = stripBom(xml);
+
+    var corrections = 0;
+    xml = xml.replace(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g, function (p) {
+      var rr = corrigerParagraphe(p, o, ligaturesOe, ligaturesAe);
+      corrections += rr.n;
+      return rr.t;
+    });
+
+    await SG.write(tmp + '/word/document.xml', xml);
+    // re-zip : --norsrc pour ne pas glisser de __MACOSX dans le paquet
+    await shellOk('rm -f ' + q(dest) + ' && ditto -c -k --norsrc ' +
+      q(tmp) + ' ' + q(dest));
+    return corrections;
+  } finally { SG.shell('rm -rf ' + q(tmp)); }
+}
+
+// ================================================ aperçu (navigateur)
+
+function echapper(s) {
+  return s.split('&').join('&amp;').split('<').join('&lt;').split('>').join('&gt;');
+}
+
+function renduLigneDiff(a, b) {
+  var ops = diffCaracteres(a, b);
+  if (ops === null)   // diff trop gros : montrer le nouveau, marqué
+    return '<ins>' + echapper(b) + '</ins>';
+  // regrouper les opérations contiguës de même type
+  var sb = '', i = 0;
+  while (i < ops.length) {
+    var type = ops[i].t;
+    var bloc = '';
+    while (i < ops.length && ops[i].t === type) { bloc += ops[i].c; i++; }
+    var texte = echapper(bloc);
+    if (type === '-') sb += '<del>' + texte + '</del>';
+    else if (type === '+') sb += '<ins>' + texte + '</ins>';
+    else sb += texte;
+  }
+  return sb;
+}
+
+// La vue « Corrections » : le nettoyage ne touche jamais aux sauts de
+// ligne, donc chaque ligne se compare à son homologue.
+function construireDiff(avantT, corrige) {
+  var sb = '<pre class="diff">';
+  if (avantT === corrige) {
+    sb += '<span class="ctx">Aucune correction : ce texte était déjà impeccable.</span>\n';
+    sb += echapper(corrige);
+    sb += '</pre>';
+    return sb;
+  }
+  var la = avantT.replace(/\r\n/g, '\n').split('\n');
+  var lc = corrige.replace(/\r\n/g, '\n').split('\n');
+  if (la.length === lc.length) {
+    for (var i = 0; i < la.length; i++) {
+      if (la[i] === lc[i])
+        sb += '<span class="ctx">' + echapper(la[i]) + '</span>\n';
+      else {
+        sb += renduLigneDiff(la[i], lc[i]);
+        sb += '\n';
+      }
+    }
+  } else sb += renduLigneDiff(avantT, corrige);   // prudence (ne devrait pas arriver)
+  sb += '</pre>';
+  return sb;
+}
+
+// Repli sans Pandoc : l'essentiel du Markdown (titres, gras, italiques,
+// exposants/indices, paragraphes), texte échappé d'abord.
+function renduSommaire(texte) {
+  var t = echapper(texte.replace(/\r\n/g, '\n'));
+  for (var niveau = 6; niveau >= 1; niveau--) {
+    var diese = new Array(niveau + 1).join('#');
+    t = t.replace(new RegExp('^' + diese + '\\s+(.+)$', 'gm'),
+      '<h' + niveau + '>$1</h' + niveau + '>');
+  }
+  t = t.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  t = t.replace(/(?<![\w*])\*([^*\n]+)\*(?![\w*])/g, '<em>$1</em>');
+  t = t.replace(/\^([^\^\s]+)\^/g, '<sup>$1</sup>');
+  t = t.replace(/(?<!~)~([^~\s]+)~(?!~)/g, '<sub>$1</sub>');
+
+  var sb = '';
+  t.split(/\n\s*\n/).forEach(function (bloc) {
+    var b = bloc.trim();
+    if (!b.length) return;
+    if (b.indexOf('<h') === 0) sb += b + '\n';
+    else sb += '<p>' + b.split('\n').join('<br>\n') + '</p>\n';
+  });
+  return sb;
+}
+
+// avant = le texte d'origine, corrige = le texte corrigé (même en mode
+// signalement), finalTexte = ce que Copier/Enregistrer produiront.
+async function construireApercu(nomDocument, avantT, corrige, finalTexte, pandoc) {
+  var mise = null;
+  if (pandoc !== null)
+    try { mise = await markdownVersHtml(pandoc, finalTexte); }
+    catch (e) { }
+  if (mise === null) mise = renduSommaire(finalTexte);
+
+  var corrections = construireDiff(avantT, corrige);
+
+  var sb = '';
+  sb += '<!DOCTYPE html>\n<html lang="fr">\n<head>\n';
+  sb += '<meta charset="utf-8">\n';
+  sb += '<title>Stargazer — Typonanny — ' + echapper(nomDocument) +
+    '</title>\n<style>\n';
+  sb += 'body{background:#0b1026;color:#e6e6f0;margin:0;padding:0}\n';
+  sb += 'header{background:#131a33;border-bottom:1px solid #2a3358;';
+  sb += "padding:1.2em 2em;font-family:'Segoe UI',sans-serif}\n";
+  sb += 'header h1{color:#f4d77a;font-size:1.25em;margin:0}\n';
+  sb += 'header p{color:#9aa3c0;margin:.3em 0 0;font-size:.95em}\n';
+  sb += 'nav{margin-top:.8em}\n';
+  sb += 'nav button{background:#131a33;color:#e6e6f0;border:1px solid #2a3358;';
+  sb += 'border-radius:8px;padding:.35em 1em;margin-right:.5em;cursor:pointer;';
+  sb += "font-family:'Segoe UI',sans-serif}\n";
+  sb += 'nav button.actif{background:#d4af37;color:#14141e;border-color:#d4af37}\n';
+  sb += 'main{max-width:44em;margin:2.5em auto;padding:0 1.5em;';
+  sb += "font-family:Georgia,'Times New Roman',serif;font-size:1.05em;";
+  sb += 'line-height:1.75}\n';
+  sb += 'main h1,main h2,main h3,main h4{color:#f4d77a;';
+  sb += "font-family:'Segoe UI',sans-serif;line-height:1.3}\n";
+  sb += 'main a{color:#7aa2f7}\n';
+  sb += 'blockquote{border-left:3px solid #d4af37;margin-left:0;';
+  sb += 'padding-left:1em;color:#9aa3c0}\n';
+  sb += 'code{background:#131a33;padding:.1em .3em;border-radius:4px}\n';
+  sb += 'pre.diff{white-space:pre-wrap;font-family:inherit;margin:0}\n';
+  sb += 'del{background:#461a20;color:#e66e78;text-decoration:line-through}\n';
+  sb += 'ins{background:#183a22;color:#98c379;text-decoration:none}\n';
+  sb += '.ctx{color:#9aa3c0}\n';
+  sb += '</style>\n</head>\n<body>\n<header>\n';
+  sb += '<h1>⭐ Stargazer — Typonanny</h1>\n';
+  sb += '<p>' + echapper(nomDocument) + '</p>\n';
+  sb += '<nav>\n';
+  sb += '<button id="bc" class="actif" onclick="voir(\'c\')">Corrections</button>\n';
+  sb += '<button id="bm" onclick="voir(\'m\')">Mise en page</button>\n';
+  sb += '</nav>\n</header>\n';
+  sb += '<main id="corrections">\n' + corrections + '\n</main>\n';
+  sb += '<main id="mise" style="display:none">\n' + mise + '\n</main>\n';
+  sb += '<script>\nfunction voir(v){\n';
+  sb += "document.getElementById('corrections').style.display=v=='c'?'block':'none';\n";
+  sb += "document.getElementById('mise').style.display=v=='m'?'block':'none';\n";
+  sb += "document.getElementById('bc').className=v=='c'?'actif':'';\n";
+  sb += "document.getElementById('bm').className=v=='m'?'actif':'';\n";
+  sb += '}\n<\/script>\n</body>\n</html>\n';
+  return sb;
+}
+
+// ==================================================== actions de la page
+
+function surTexteChange() {
+  statsEl.textContent = statistiques(avant.value);
+  _resultat = null;   // le texte a bougé : l'ancien résultat est périmé
+}
+avant.addEventListener('input', surTexteChange);
+
+function setAvant(texte) {
+  avant.value = texte;
+  surTexteChange();
+}
+
+async function chargerFichier(chemin) {
+  try {
+    var ext = extDe(chemin);
+    if (ext === '.docx' || ext === '.odt') {
+      // Manuscrit mis en forme : Pandoc si possible (aller-retour
+      // complet), sinon texte brut extrait du XML.
+      var pandoc = await trouverPandoc();
+      if (pandoc !== null) {
+        setAvant(await importerEnMarkdown(pandoc, chemin));
+        _formatSource = ext.slice(1);
+        setStatus(chemin + " — importé via Pandoc : l'enregistrement " +
+          'redonnera un .' + _formatSource + " avec ses styles d'origine.", 'ok');
+      } else {
+        setAvant(await extraireTexteBrut(chemin));
+        _formatSource = ext === '.docx' ? 'docx' : null;
+        setStatus(chemin + ' — texte extrait sans mise en forme ' +
+          '(installez Pandoc via Skadoosh > Installer les dépendances ' +
+          "pour l'aperçu structuré)." +
+          (ext === '.docx' ? " L'enregistrement en .docx garde quand " +
+            'même les styles (correction directe du document).' : ''), 'info');
+      }
+      _texteImporte = avant.value;
+      _bomSource = true;
+    } else {
+      var r = await SG.call('typo.lireTexte', { path: chemin });
+      if (r.err) throw new Error(r.err);
+      _bomSource = r.bom;
+      setAvant(r.text);
+      _formatSource = null;
+      _texteImporte = null;
+      setStatus(chemin, 'doux');
+    }
+    _fichierSource = chemin;
+    _resultat = null;
+    rapportEl.innerHTML = '';
+  } catch (ex) {
+    setStatus('Impossible de lire le fichier : ' + (ex.message || ex), 'erreur');
+    SG.journal('Lecture de « ' + chemin + ' » : ' + (ex.message || ex));
+  }
+}
+
+async function ouvrir() {
+  var o = await SG.chooseFile({
+    prompt: 'Choisissez le texte à confier à la nounou'
+  });
+  if (o.paths && o.paths.length) chargerFichier(o.paths[0]);
+}
+
+async function coller() {
+  var r = await SG.call('typo.coller');
+  if (r.text !== null && r.text !== undefined) {
+    setAvant(r.text);
+    _fichierSource = null;   // le nom d'aperçu redevient « texte collé »
+  }
+}
+
+async function copier() {
+  if (_resultat !== null && _resultat.length > 0)
+    await SG.call('typo.copier', { text: _resultat });
+}
+
+function ligneRapport(texte) {
+  var el = document.createElement('div');
+  el.className = 'ligne';
+  el.textContent = texte;
+  rapportEl.appendChild(el);
+}
+
+async function nettoyer() {
+  if (avant.value.length === 0) {
+    setStatus("Rien à nettoyer : collez ou ouvrez un texte d'abord.", 'doux');
+    return;
+  }
+  // les listes de ligatures sont relues à chaque nettoyage
+  var oe = await chargerLigatures('ligatures.txt', LIGATURES_OE_DEFAUT);
+  var ae = await chargerLigatures('ligatures-ae.txt', LIGATURES_AE_DEFAUT);
+  var r = nettoyerTexte(avant.value, _options, oe, ae);
+  _avantNettoye = avant.value;
+  _corrige = r.texte;
+  _resultat = _options.signalerSeulement ? avant.value : r.texte;
+
+  rapportEl.innerHTML = '';
+  var total = 0;
+  r.compteurs.forEach(function (kv) {
+    total += kv[1];
+    ligneRapport('✔  ' + kv[1] + ' ' + kv[0]);
+  });
+  r.signalements.forEach(function (s) { ligneRapport('⚠  ' + s); });
+  if (total === 0 && r.signalements.length === 0)
+    ligneRapport('Rien à redire : ce texte est déjà impeccable. Étonnant.');
+
+  statistiquesParChapitre(avant.value).forEach(function (ligne) {
+    ligneRapport('§  ' + ligne);
+  });
+
+  setStatus((_options.signalerSeulement
+    ? total + " correction(s) possibles (mode signalement : rien n'a été modifié)."
+    : total + ' correction(s) appliquée(s)' +
+      (r.signalements.length > 0 ? ', ' + r.signalements.length + ' signalement(s).' : '.')) +
+    "  « Ouvrir l'aperçu » pour relire confortablement.", 'ok');
+}
+
+// Écrit l'aperçu HTML dans exports/apercu.html (écrasé à chaque fois)
+// et l'ouvre dans le navigateur par défaut.
+async function ouvrirApercu() {
+  if (_resultat === null) {
+    await nettoyer();   // par confort : nettoie puis montre
+    if (_resultat === null) return;
+  }
+  try {
+    var chemin = env.appDir + '/exports/apercu.html';
+    var nomDoc = _fichierSource !== null
+      ? SG.basename(_fichierSource) : 'texte collé';
+    var pandoc = await trouverPandoc();
+    var html = await construireApercu(nomDoc, _avantNettoye, _corrige,
+      _resultat, pandoc);
+    var w = await SG.write(chemin, '﻿' + html);   // UTF-8 avec BOM
+    if (!w.ok) throw new Error("écriture de l'aperçu impossible");
+    await SG.openPath(chemin);
+    setStatus('Aperçu ouvert dans le navigateur — ' + chemin, 'ok');
+  } catch (ex) {
+    setStatus("Impossible d'ouvrir l'aperçu : " + (ex.message || ex), 'erreur');
+    SG.journal('Aperçu : ' + (ex.message || ex));
+  }
+}
+
+async function enregistrer() {
+  if (_resultat === null || _resultat.length === 0) {
+    setStatus("Nettoyez d'abord : c'est le résultat qui s'enregistre.", 'doux');
+    return;
+  }
+  // jamais l'original : le dialogue propose d'office « -typo »
+  var args = { prompt: 'Enregistrer le texte nettoyé' };
+  if (_fichierSource !== null) {
+    args.dir = SG.dirname(_fichierSource);
+    args.name = stemDe(_fichierSource) + '-typo' + extDe(_fichierSource);
+  } else args.name = 'texte-typo.txt';
+  var s = await SG.saveFile(args);
+  if (!s.path) return;
+  try {
+    var extOut = extDe(s.path);
+    var memeFormat = _formatSource !== null &&
+      extOut === '.' + _formatSource &&
+      _fichierSource !== null && (await SG.exists(_fichierSource)).exists;
+    var texteIntact = _texteImporte !== null && avant.value === _texteImporte;
+
+    if (extOut === '.docx' && memeFormat && texteIntact &&
+        !_options.signalerSeulement) {
+      // Chemin royal : correction directe du document d'origine — gras,
+      // couleurs, polices, styles, tout reste exactement en place.
+      var oe = await chargerLigatures('ligatures.txt', LIGATURES_OE_DEFAUT);
+      var ae = await chargerLigatures('ligatures-ae.txt', LIGATURES_AE_DEFAUT);
+      var n = await chirurgieDocx(_fichierSource, s.path, _options, oe, ae);
+      setStatus('Enregistré : ' + s.path + ' — ' + n +
+        " correction(s), styles d'origine conservés à l'identique.", 'ok');
+      return;
+    }
+    if (extOut === '.docx' || extOut === '.odt') {
+      var pandoc = await trouverPandoc();
+      if (pandoc === null)
+        throw new Error('Pandoc introuvable — enregistrez en .txt/.md, ' +
+          'ou installez Pandoc via Skadoosh.');
+      // le document d'origine sert de gabarit de styles
+      await exporterDepuisMarkdown(pandoc, _resultat, s.path,
+        memeFormat ? _fichierSource : null);
+      setStatus('Enregistré : ' + s.path +
+        (memeFormat && !texteIntact
+          ? ' — retouches manuelles incluses (mise en forme reconstruite ' +
+            'depuis le texte, styles du document appliqués).'
+          : '.'), 'ok');
+      return;
+    }
+    var w = await SG.write(s.path, (_bomSource ? '﻿' : '') + _resultat);
+    if (!w.ok) throw new Error('écriture impossible');
+    setStatus('Enregistré : ' + s.path, 'ok');
+  } catch (ex) {
+    setStatus("Impossible d'enregistrer : " + (ex.message || ex), 'erreur');
+    SG.journal('Enregistrement : ' + (ex.message || ex));
+  }
+}
+
+// ------------------------------------------------------- dialogue Règles
+
+function ouvrirRegles() {
+  document.getElementById('pre-in').checked = _options.prereglage !== 'souple' &&
+    _options.prereglage !== 'minimal';
+  document.getElementById('pre-souple').checked = _options.prereglage === 'souple';
+  document.getElementById('pre-minimal').checked = _options.prereglage === 'minimal';
+  var grille = document.getElementById('grille-regles');
+  grille.innerHTML = '';
+  LIBELLES_REGLES.forEach(function (libelle, i) {
+    var label = document.createElement('label');
+    var chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.id = 'regle-' + CLES_REGLES[i];
+    chk.checked = !!_options[CLES_REGLES[i]];
+    label.appendChild(chk);
+    label.appendChild(document.createTextNode(' ' + libelle));
+    grille.appendChild(label);
+  });
+  document.getElementById('chk-signaler').checked = _options.signalerSeulement;
+  document.getElementById('voile-regles').classList.add('ouvert');
+}
+
+function fermerRegles() {
+  document.getElementById('voile-regles').classList.remove('ouvert');
+}
+
+async function validerRegles() {
+  var o = optionsParDefaut();
+  o.prereglage = document.getElementById('pre-souple').checked ? 'souple'
+    : (document.getElementById('pre-minimal').checked ? 'minimal' : 'in');
+  CLES_REGLES.forEach(function (cle) {
+    o[cle] = document.getElementById('regle-' + cle).checked;
+  });
+  o.signalerSeulement = document.getElementById('chk-signaler').checked;
+  _options = o;
+  fermerRegles();
+  await sauverOptions(o);
+}
+
+// ------------------------------------------- « Premiers préparatifs »
+// Pandoc manque ? Il se télécharge tout seul (deps.sh, dossier de
+// dépendances partagé) — aucune question posée. Sans lui, l'app marche
+// quand même : « Continuer en arrière-plan » rend la main tout de suite.
+
+var NOM_DEP_PANDOC = 'Pandoc (documents .docx/.odt, aperçu riche)';
+
+function prepEtat(etat) {
+  var el = document.getElementById('prep-dep');
+  if (etat === 'attente') { el.textContent = '…  ' + NOM_DEP_PANDOC; el.className = 'attente'; }
+  else if (etat === 'encours') { el.textContent = '⏳  ' + NOM_DEP_PANDOC + ' — téléchargement…'; el.className = 'encours'; }
+  else if (etat === 'ok') { el.textContent = '✔  ' + NOM_DEP_PANDOC; el.className = 'ok'; }
+  else { el.textContent = '✖  ' + NOM_DEP_PANDOC + ' — échec (connexion ?)'; el.className = 'echec'; }
+}
+
+async function journalInstall(code, sortie) {
+  try {
+    var path = env.appDir + '/logs/install.log';
+    var old = (await SG.read(path)).text || '';
+    var d = new Date();
+    function p2(x) { return (x < 10 ? '0' : '') + x; }
+    var stamp = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' +
+      p2(d.getDate()) + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes()) +
+      ':' + p2(d.getSeconds());
+    await SG.write(path, old + '=== ' + stamp +
+      '  deps.sh ensure pandoc — code ' + code + ' ===\n' + sortie + '\n');
+  } catch (e) { }
+}
+
+async function premiersPreparatifs() {
+  if (await trouverPandoc()) return;
+  var voile = document.getElementById('voile-preparatifs');
+  prepEtat('attente');
+  voile.classList.add('ouvert');
+  prepEtat('encours');
+  var sortie = '';
+  var code = await SG.task('/bin/zsh ' +
+    q(env.macRoot + '/scripts/deps.sh') + ' ensure pandoc', {
+    onOutput: function (chunk) { sortie += chunk; }
+  });
+  await journalInstall(code, sortie);
+  if (code === 0 && (await trouverPandoc())) {
+    prepEtat('ok');
+    setTimeout(function () { voile.classList.remove('ouvert'); }, 600);
+  } else {
+    prepEtat('echec');
+    var intro = document.getElementById('prep-intro');
+    intro.textContent = 'Une installation a échoué — vérifiez la ' +
+      "connexion. L'application marche quand même, en mode simplifié ; " +
+      'elle retentera au prochain lancement (détails : logs/install.log).';
+    intro.className = 'erreur';
+    document.getElementById('prep-barre').style.display = 'none';
+    document.getElementById('btn-prep-continuer').textContent =
+      'Continuer quand même';
+  }
+}
+
+// ------------------------------------------------------------- clavier
+// Échap ferme l'application ; Cmd+Entrée (ou Ctrl+Entrée) nettoie.
+
+document.addEventListener('keydown', function (e) {
+  var voile = document.querySelector('.voile.ouvert');
+  if (voile) {
+    if (e.key === 'Escape' && voile.id === 'voile-regles') {
+      e.preventDefault();
+      fermerRegles();
+    } else if (e.key === 'Enter' && voile.id === 'voile-regles' &&
+               document.activeElement !== document.getElementById('btn-regles-annuler')) {
+      e.preventDefault();
+      validerRegles();
+    }
+    return;
+  }
+  if (e.key === 'Escape') { SG.quit(); return; }
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    nettoyer();
+  }
+});
+
+// ------------------------------------------------------- branchements
+
+document.getElementById('btn-ouvrir').onclick = ouvrir;
+document.getElementById('btn-coller').onclick = coller;
+document.getElementById('btn-nettoyer').onclick = nettoyer;
+document.getElementById('btn-apercu').onclick = ouvrirApercu;
+document.getElementById('btn-copier').onclick = copier;
+document.getElementById('btn-enregistrer').onclick = enregistrer;
+document.getElementById('btn-regles').onclick = ouvrirRegles;
+document.getElementById('btn-regles-ok').onclick = validerRegles;
+document.getElementById('btn-regles-annuler').onclick = fermerRegles;
+document.getElementById('btn-prep-continuer').onclick = function () {
+  document.getElementById('voile-preparatifs').classList.remove('ouvert');
+};
+
+// glisser-déposer : seul le premier fichier est chargé
+SG.onDrop(function (paths) {
+  if (paths && paths.length) chargerFichier(paths[0]);
+});
+
+// fichier ouvert via l'icône (équivalent de l'argument CLI Windows)
+SG.on('ouvrirFichier', function (p) {
+  if (p && p.path) chargerFichier(p.path);
+});
+
+// ------------------------------------------------------------ démarrage
+
+(async function init() {
+  env = await SG.env();
+  tempDir = (await SG.call('typo.tempDir')).dir;
+  await ecrireLigaturesParDefaut();
+  _options = await chargerOptions();
+  var fi = await SG.call('typo.fichierInitial');
+  if (fi.path) await chargerFichier(fi.path);
+  premiersPreparatifs();
+})();
+</script>
+</body>
+</html>
