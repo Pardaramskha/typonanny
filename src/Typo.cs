@@ -451,10 +451,18 @@ namespace Typonanny
 
         // Une ligne qui n'est qu'un séparateur de texte (« *** »), avec ou
         // sans les antislashs d'échappement de Pandoc (« \*\*\* »).
+        // Les espaces entre les caractères sont tolérées : « * * * » est le
+        // même séparateur que « *** ».
         private static Regex MotifSeparateur(string sep)
         {
             var sb = new StringBuilder(@"(?m)^[ \t]*");
-            foreach (var c in sep) sb.Append(@"\\?").Append(Regex.Escape(c.ToString()));
+            var premier = true;
+            foreach (var c in sep)
+            {
+                if (!premier) sb.Append(@"[ \t]*");
+                sb.Append(@"\\?").Append(Regex.Escape(c.ToString()));
+                premier = false;
+            }
             sb.Append(@"[ \t]*(?=\r?$)");
             return new Regex(sb.ToString());
         }

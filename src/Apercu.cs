@@ -368,13 +368,13 @@ namespace Typonanny
                       .Append("</h").Append(n).Append(">\n");
                     continue;
                 }
-                if (seps.Contains(t.Trim()))
+                if (seps.Contains(t.Trim().Replace(" ", "").Replace("\t", "")))   // « * * * » vaut « *** »
                 {
                     fermerPara(); fermerBloc();
                     sb.Append("<p class=\"sep\">").Append(l.Html).Append("</p>\n");
                     continue;
                 }
-                if (Regex.IsMatch(t.Trim(), @"^(-{3,}|\*{3,}|_{3,})$"))   // filet horizontal
+                if (Regex.IsMatch(t.Trim(), @"^([-*_])([ \t]*\1){2,}$"))   // filet horizontal (« * * * » aussi)
                 {
                     fermerPara(); fermerBloc();
                     sb.Append("<hr>\n");

@@ -479,9 +479,9 @@ var MOTIFS_PROTEGES = [
 // Une ligne qui n'est qu'un séparateur de texte (« *** »), avec ou sans
 // les antislashs d'échappement de Pandoc (« \*\*\* »).
 function motifSeparateur(sep) {
-  var corps = '';
+  var corps = '';   // espaces tolérées entre les caractères : « * * * » vaut « *** »
   for (var i = 0; i < sep.length; i++)
-    corps += '\\\\?' + sep.charAt(i).replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&');
+    corps += (i ? '[ \\t]*' : '') + '\\\\?' + sep.charAt(i).replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&');
   return new RegExp('^[ \\t]*' + corps + '[ \\t]*$', 'gm');
 }
 
@@ -862,8 +862,9 @@ function desechapperSeparateurs(markdown, separateurs) {
   if (!separateurs || !separateurs.length) return markdown;
   return markdown.replace(/^([ \t]*)(\S.*?)([ \t]*)$/gm, function (m, g1, g2, g3) {
     var nu = g2.replace(/\\/g, '');
+    var serre = nu.replace(/[ \t]/g, '');   // « * * * » vaut « *** »
     for (var i = 0; i < separateurs.length; i++)
-      if (nu === separateurs[i]) return g1 + separateurs[i] + g3;
+      if (serre === separateurs[i]) return g1 + nu + g3;
     return m;
   });
 }
@@ -874,11 +875,23 @@ function desechapperSeparateurs(markdown, separateurs) {
 function echapperSeparateurs(markdown, separateurs) {
   if (!separateurs || !separateurs.length) return markdown;
   return markdown.replace(/^([ \t]*)(\S.*?)([ \t]*)$/gm, function (m, g1, g2, g3) {
+    var serre = g2.replace(/[ \t]/g, '');   // « * * * » vaut « *** »
     for (var i = 0; i < separateurs.length; i++)
-      if (g2 === separateurs[i])
+      if (serre === separateurs[i])
         return g1 + g2.replace(/[\\*_#+>~=|`\[\]!<-]/g, '\\$&') + g3;
     return m;
   });
+}
+
+// Un texte collé ou tapé sépare souvent ses paragraphes par un simple
+// retour à la ligne ; pour Pandoc, ce n'est qu'un retour souple : tout
+// fusionnait en un seul paragraphe, et deux « * » de séparateurs
+// devenaient un long italique. S'il n'y a AUCUNE ligne vide dans le
+// texte, chaque ligne est un paragraphe.
+function paragrapher(markdown) {
+  var t = markdown.replace(/\r\n/g, '\n');
+  if (t.indexOf('\n') < 0 || /\n[ \t]*\n/.test(t)) return markdown;
+  return t.replace(/\n+$/, '').split('\n').join('\n\n') + '\n';
 }
 
 // Markdown nettoyé -> document ; « referenceDoc » = le document
@@ -886,7 +899,7 @@ function echapperSeparateurs(markdown, separateurs) {
 async function exporterDepuisMarkdown(pandoc, markdown, dest, referenceDoc, separateurs) {
   var temp = tempDir + 'typonanny_' + guid() + '.md';
   try {
-    await SG.write(temp, echapperSeparateurs(markdown, separateurs));   // UTF-8 sans BOM
+    await SG.write(temp, echapperSeparateurs(paragrapher(markdown), separateurs));   // UTF-8 sans BOM
     var gabarit = '';
     if (referenceDoc && (await SG.exists(referenceDoc)).exists)
       gabarit = '--reference-doc=' + q(referenceDoc) + ' ';
@@ -1203,12 +1216,12 @@ function mettreEnPage(lignes, separateurs) {
       sb += '<h' + n + '>' + enLigne(sansMarque(l.html, '#{1,6}[ \\t]+')) + '</h' + n + '>\n';
       return;
     }
-    if (separateurs.indexOf(t.trim()) >= 0) {
+    if (separateurs.indexOf(t.trim().replace(/[ \t]/g, '')) >= 0) {   // « * * * » vaut « *** »
       fermerPara(); fermerBloc();
       sb += '<p class="sep">' + l.html + '</p>\n';
       return;
     }
-    if (/^(-{3,}|\*{3,}|_{3,})$/.test(t.trim())) {   // filet horizontal
+    if (/^([-*_])([ \t]*\1){2,}$/.test(t.trim())) {   // filet horizontal (« * * * » aussi)
       fermerPara(); fermerBloc();
       sb += '<hr>\n';
       return;

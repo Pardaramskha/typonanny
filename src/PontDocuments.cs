@@ -144,8 +144,9 @@ namespace Typonanny
             return Regex.Replace(markdown, @"(?m)^([ \t]*)(\S.*?)([ \t]*)(?=\r?$)", delegate(Match m)
             {
                 var nu = m.Groups[2].Value.Replace("\\", "");
+                var serre = nu.Replace(" ", "").Replace("\t", "");   // « * * * » vaut « *** »
                 foreach (var s in separateurs)
-                    if (nu == s) return m.Groups[1].Value + s + m.Groups[3].Value;
+                    if (serre == s) return m.Groups[1].Value + nu + m.Groups[3].Value;
                 return m.Value;
             });
         }
@@ -158,11 +159,13 @@ namespace Typonanny
             if (separateurs == null || separateurs.Length == 0) return markdown;
             return Regex.Replace(markdown, @"(?m)^([ \t]*)(\S.*?)([ \t]*)(?=\r?$)", delegate(Match m)
             {
+                var corps = m.Groups[2].Value;
+                var serre = corps.Replace(" ", "").Replace("\t", "");   // « * * * » vaut « *** »
                 foreach (var s in separateurs)
-                    if (m.Groups[2].Value == s)
+                    if (serre == s)
                     {
                         var sb = new StringBuilder();
-                        foreach (var c in s)
+                        foreach (var c in corps)
                         {
                             if ("\\*_#-+>~=|`[]!<".IndexOf(c) >= 0) sb.Append('\\');
                             sb.Append(c);
@@ -171,6 +174,18 @@ namespace Typonanny
                     }
                 return m.Value;
             });
+        }
+
+        // Un texte collé ou tapé sépare souvent ses paragraphes par un simple
+        // retour à la ligne (Word colle ainsi) ; pour Pandoc, ce n'est qu'un
+        // retour souple : tout fusionnait en un seul paragraphe, et deux
+        // « * » de séparateurs devenaient un long italique. S'il n'y a
+        // AUCUNE ligne vide dans le texte, chaque ligne est un paragraphe.
+        public static string Paragrapher(string markdown)
+        {
+            var t = markdown.Replace("\r\n", "\n");
+            if (t.IndexOf('\n') < 0 || Regex.IsMatch(t, @"\n[ \t]*\n")) return markdown;
+            return t.TrimEnd('\n').Replace("\n", "\r\n\r\n") + "\r\n";
         }
 
         // Markdown nettoyé -> document (.docx ou .odt selon l'extension de
@@ -185,7 +200,7 @@ namespace Typonanny
                 "typonanny_" + Guid.NewGuid().ToString("N") + ".md");
             try
             {
-                File.WriteAllText(temp, EchapperSeparateurs(markdown, separateurs),
+                File.WriteAllText(temp, EchapperSeparateurs(Paragrapher(markdown), separateurs),
                     new UTF8Encoding(false));
                 var gabarit = referenceDoc != null && File.Exists(referenceDoc)
                     ? "--reference-doc=\"" + referenceDoc + "\" " : "";

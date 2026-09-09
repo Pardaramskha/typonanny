@@ -1,5 +1,19 @@
 ﻿# Changelog — Typonanny
 
+## 1.7.6 — 2026-09-09
+
+- **« * * * » est le même séparateur que « *** ».** Les espaces entre les
+  caractères d'un séparateur de texte sont tolérées partout : protection
+  par le moteur, aller-retour .docx/.odt, et aperçu — où « * * * » passait
+  pour une puce de liste (un point médian et rien derrière). Un filet
+  Markdown espacé (« * * * » non protégé) est reconnu comme filet.
+- **Un texte collé garde ses paragraphes à l'export.** Word colle ses
+  paragraphes séparés par de simples retours à la ligne ; pour Pandoc,
+  c'étaient des retours souples : le .docx enregistré fusionnait tout en
+  un seul paragraphe, et deux « * » de séparateurs se refermaient en un
+  long italique. S'il n'y a aucune ligne vide dans le texte, chaque ligne
+  devient un paragraphe à l'export.
+
 ## 1.7.5 — 2026-09-09
 
 - **Plus de `<span id="anchor"></span>` en tête de texte.** Un signet
