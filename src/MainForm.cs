@@ -228,7 +228,8 @@ namespace Typonanny
                     var pandoc = PontDocuments.TrouverPandoc(_appDir);
                     if (pandoc != null)
                     {
-                        _avant.Text = PontDocuments.ImporterEnMarkdown(pandoc, chemin);
+                        _avant.Text = PontDocuments.ImporterEnMarkdown(pandoc, chemin,
+                            _options.Separateurs());
                         _formatSource = ext.TrimStart('.');
                         _status.Text = chemin + " — importé via Pandoc : " +
                             "l'enregistrement redonnera un ." + _formatSource +
@@ -328,7 +329,8 @@ namespace Typonanny
                     ? Path.GetFileName(_fichierSource) : "texte collé";
                 var pandoc = PontDocuments.TrouverPandoc(_appDir);
                 File.WriteAllText(chemin,
-                    Apercu.Construire(nomDoc, _avantNettoye, _corrige, _resultat, pandoc),
+                    Apercu.Construire(nomDoc, _avantNettoye, _corrige, _resultat, pandoc,
+                        _options.Separateurs()),
                     new UTF8Encoding(true));
                 System.Diagnostics.Process.Start(chemin);
                 _status.Text = "Aperçu ouvert dans le navigateur — " + chemin;
@@ -407,7 +409,8 @@ namespace Typonanny
                                 "lancement (connexion requise).");
                         // le document d'origine sert de gabarit de styles
                         PontDocuments.ExporterDepuisMarkdown(pandoc, _resultat,
-                            dlg.FileName, memeFormat ? _fichierSource : null);
+                            dlg.FileName, memeFormat ? _fichierSource : null,
+                            _options.Separateurs());
                         _status.Text = "Enregistré : " + dlg.FileName +
                             (memeFormat && !texteIntact
                                 ? " — retouches manuelles incluses (mise en forme " +

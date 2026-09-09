@@ -31,11 +31,11 @@ namespace Typonanny
         // mode signalement), finalTexte = ce que Copier/Enregistrer
         // produiront (identique à corrige, sauf en mode signalement).
         public static string Construire(string nomDocument, string avant,
-            string corrige, string finalTexte, string pandoc)
+            string corrige, string finalTexte, string pandoc, string[] separateurs)
         {
             string mise = null;
             if (pandoc != null)
-                try { mise = PontDocuments.MarkdownVersHtml(pandoc, finalTexte); }
+                try { mise = PontDocuments.MarkdownVersHtml(pandoc, finalTexte, separateurs); }
                 catch { }
             if (mise == null) mise = RenduSommaire(finalTexte);
 

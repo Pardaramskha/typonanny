@@ -95,6 +95,16 @@
   }
   #lbl-signaler { color: var(--or-clair); margin-top: 10px; }
   #note-regles { color: var(--texte-doux); margin-top: 10px; font-size: 12px; }
+  #sep-champ {
+    display: block; width: calc(100% - 20px); box-sizing: border-box;
+    margin: 4px 0 4px 20px; padding: 6px 10px;
+    background: var(--panneau); color: var(--texte);
+    border: 1px solid var(--bordure); border-radius: 8px;
+    font: 13px Menlo, monospace; outline: none;
+  }
+  #sep-champ:focus { border-color: var(--or); }
+  #sep-champ:disabled { opacity: .5; }
+  #note-sep { color: var(--texte-doux); margin: 0 0 0 20px; font-size: 12px; }
 
   /* premiers préparatifs */
   #prep-intro { color: var(--texte-doux); margin-bottom: 12px; }
@@ -130,7 +140,7 @@
 
 <!-- ------------------------------------------------- règles -->
 <div class="voile" id="voile-regles">
-  <div class="dialogue" style="width:500px">
+  <div class="dialogue" style="width:560px">
     <h2>Règles typographiques — Typonanny</h2>
     <div class="section">Préréglage</div>
     <label><input type="radio" name="pre" id="pre-in"> Imprimerie nationale (strict) — fine avant ; ! ?, pleine avant : et dans « »</label>
@@ -139,6 +149,10 @@
     <div class="section">Règles (le préréglage Minimal ignore celles marquées °)</div>
     <div id="grille-regles"></div>
     <label id="lbl-signaler"><input type="checkbox" id="chk-signaler"> Signaler seulement : rapport complet, aucune correction écrite</label>
+    <div class="section">Séparateurs de texte</div>
+    <label><input type="checkbox" id="chk-sep"> Ne pas corriger les séparateurs de texte (lignes qui ne contiennent que l'un de ces symboles) :</label>
+    <input type="text" id="sep-champ" spellcheck="false">
+    <div id="note-sep">Un symbole par mot, séparés par des espaces (par exemple : ***  ~  ---). Ils survivent aussi à l'aller-retour .docx/.odt.</div>
     <div id="note-regles">Les listes de ligatures sont de simples fichiers texte dans config/ — éditez-les dans TextEdit, Typonanny les relit à chaque lancement. Le reste des réglages vit dans config/typo.conf.</div>
     <div class="boutons">
       <button class="primaire" id="btn-regles-ok">Enregistrer</button>
@@ -254,8 +268,19 @@ function optionsParDefaut() {
     tiretsDialogue: true, intervalles: true, insecables: true,
     insecablesUnites: true, milliers: true, ligaturesOe: true,
     ligaturesAe: false, dimensions: true, ordinaux: true,
-    signalerMajuscules: true, signalerSeulement: false
+    signalerMajuscules: true, signalerSeulement: false,
+    protegerSeparateurs: true, separateurs: '***'
   };
+}
+
+// Les séparateurs à protéger, un par entrée (vide si l'option est off).
+function separateursDe(o) {
+  if (!o.protegerSeparateurs || !o.separateurs) return [];
+  var l = [];
+  o.separateurs.split(/[ \t]+/).forEach(function (s) {
+    if (s && l.indexOf(s) < 0) l.push(s);
+  });
+  return l;
 }
 
 // Glyphes dépendant du préréglage (IN strict / souple).
@@ -282,6 +307,8 @@ async function chargerOptions() {
     var actif = val === '1' || val === 'true';
     if (cle === 'prereglage') o.prereglage = val;
     else if (cle === 'signalerSeulement') o.signalerSeulement = actif;
+    else if (cle === 'protegerSeparateurs') o.protegerSeparateurs = actif;
+    else if (cle === 'separateurs') o.separateurs = val;
     else if (CLES_REGLES.indexOf(cle) >= 0) o[cle] = actif;
   });
   return o;
@@ -294,6 +321,8 @@ async function sauverOptions(o) {
     lignes.push(cle + '=' + (o[cle] ? '1' : '0'));
   });
   lignes.push('signalerSeulement=' + (o.signalerSeulement ? '1' : '0'));
+  lignes.push('protegerSeparateurs=' + (o.protegerSeparateurs ? '1' : '0'));
+  lignes.push('separateurs=' + (o.separateurs || ''));
   await SG.write(cheminConfig('typo.conf'), '﻿' + lignes.join('\n') + '\n');
 }
 
@@ -417,7 +446,16 @@ var MOTIFS_PROTEGES = [
   /\b\d+:\d+\b/g                         // ratio 16:9
 ];
 
-function masquer(texte, zones) {
+// Une ligne qui n'est qu'un séparateur de texte (« *** »), avec ou sans
+// les antislashs d'échappement de Pandoc (« \*\*\* »).
+function motifSeparateur(sep) {
+  var corps = '';
+  for (var i = 0; i < sep.length; i++)
+    corps += '\\\\?' + sep.charAt(i).replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&');
+  return new RegExp('^[ \\t]*' + corps + '[ \\t]*$', 'gm');
+}
+
+function masquer(texte, zones, separateurs) {
   // point de départ en zone privée, au-delà de tout PUA déjà présent
   var basePua = 0xE000;
   for (var i = 0; i < texte.length; i++) {
@@ -425,7 +463,9 @@ function masquer(texte, zones) {
     if (c >= 0xE000 && c <= 0xF8FF && c >= basePua) basePua = c + 1;
   }
   var travail = texte;
-  MOTIFS_PROTEGES.forEach(function (rx) {
+  var motifs = MOTIFS_PROTEGES.slice();
+  (separateurs || []).forEach(function (s) { motifs.push(motifSeparateur(s)); });
+  motifs.forEach(function (rx) {
     travail = travail.replace(rx, function (m) {
       zones.push(m);
       return String.fromCharCode(basePua + zones.length - 1);
@@ -504,7 +544,7 @@ function nettoyerTexte(texte, o, ligaturesOe, ligaturesAe) {
   // (1) masquer les zones protégées : URL, e-mails, chemins, code
   // Markdown, heures/ratios. Jetons en zone privée Unicode.
   var zones = [];
-  var travail = masquer(texte, zones);
+  var travail = masquer(texte, zones, separateursDe(o));
   var rc;
 
   // (2) espaces bruts
@@ -551,7 +591,9 @@ function nettoyerTexte(texte, o, ligaturesOe, ligaturesAe) {
 
   // (4) tirets
   if (o.tiretsDialogue && !estMinimal(o)) {
-    rc = remplacerCompte(travail, /^([ \t]*)-{1,2}[ \t]+/gm,
+    // « \- » : Pandoc échappe un tiret en début de ligne (sinon ce serait
+    // une liste) ; l'antislash part avec la correction.
+    rc = remplacerCompte(travail, /^([ \t]*)\\?-{1,2}[ \t]+/gm,
       function (m, g1) { return g1 + '— '; });
     travail = rc.t; compter('tiret(s) de dialogue « — »', rc.n);
   }
@@ -723,39 +765,70 @@ async function executerPandoc(pandoc, args) {
 
 // Document -> Markdown éditable. --wrap=none : pas de retours à la
 // ligne artificiels qui perturberaient les règles typographiques.
-async function importerEnMarkdown(pandoc, document_) {
+// -smart : sans ça, le writer de Pandoc échappe les guillemets droits,
+// les apostrophes et les points de suspension (\", \', \...) — c'est
+// justement le travail de la nounou, et ces antislashs se retrouvaient
+// dans le texte. Même drapeau à l'export et à l'aperçu. Les lignes qui
+// ne sont qu'un séparateur (« *** ») reviennent échappées (\*\*\*) : on
+// les déséchappe pour l'édition, echapperSeparateurs les rétablit.
+async function importerEnMarkdown(pandoc, document_, separateurs) {
   var temp = tempDir + 'typonanny_' + guid() + '.md';
   try {
     await executerPandoc(pandoc,
-      '--wrap=none -t markdown -o ' + q(temp) + ' ' + q(document_));
+      '--wrap=none -t markdown-smart -o ' + q(temp) + ' ' + q(document_));
     var t = (await SG.read(temp)).text;
     if (t === null) throw new Error('conversion Pandoc vide');
-    return stripBom(t);
+    return desechapperSeparateurs(stripBom(t), separateurs);
   } finally { SG.shell('rm -f ' + q(temp)); }
+}
+
+// Une ligne « \*\*\* » (séparateur échappé par Pandoc) -> « *** ».
+function desechapperSeparateurs(markdown, separateurs) {
+  if (!separateurs || !separateurs.length) return markdown;
+  return markdown.replace(/^([ \t]*)(\S.*?)([ \t]*)$/gm, function (m, g1, g2, g3) {
+    var nu = g2.replace(/\\/g, '');
+    for (var i = 0; i < separateurs.length; i++)
+      if (nu === separateurs[i]) return g1 + separateurs[i] + g3;
+    return m;
+  });
+}
+
+// L'inverse, avant de rendre le Markdown à Pandoc : une ligne qui n'est
+// qu'un séparateur redevient du texte échappé, sinon « *** » serait lu
+// comme un filet horizontal et « --- » comme un titre.
+function echapperSeparateurs(markdown, separateurs) {
+  if (!separateurs || !separateurs.length) return markdown;
+  return markdown.replace(/^([ \t]*)(\S.*?)([ \t]*)$/gm, function (m, g1, g2, g3) {
+    for (var i = 0; i < separateurs.length; i++)
+      if (g2 === separateurs[i])
+        return g1 + g2.replace(/[\\*_#+>~=|`\[\]!<-]/g, '\\$&') + g3;
+    return m;
+  });
 }
 
 // Markdown nettoyé -> document ; « referenceDoc » = le document
 // d'origine sert de gabarit de styles (--reference-doc).
-async function exporterDepuisMarkdown(pandoc, markdown, dest, referenceDoc) {
+async function exporterDepuisMarkdown(pandoc, markdown, dest, referenceDoc, separateurs) {
   var temp = tempDir + 'typonanny_' + guid() + '.md';
   try {
-    await SG.write(temp, markdown);   // UTF-8 sans BOM
+    await SG.write(temp, echapperSeparateurs(markdown, separateurs));   // UTF-8 sans BOM
     var gabarit = '';
     if (referenceDoc && (await SG.exists(referenceDoc)).exists)
       gabarit = '--reference-doc=' + q(referenceDoc) + ' ';
-    await executerPandoc(pandoc, '--standalone -f markdown ' + gabarit +
+    await executerPandoc(pandoc, '--standalone -f markdown-smart ' + gabarit +
       '-o ' + q(dest) + ' ' + q(temp));
   } finally { SG.shell('rm -f ' + q(temp)); }
 }
 
 // Markdown -> fragment HTML pour l'aperçu. -raw_html : une balise
-// égarée dans un manuscrit doit s'afficher, pas s'exécuter.
-async function markdownVersHtml(pandoc, markdown) {
+// égarée dans un manuscrit doit s'afficher, pas s'exécuter. -smart :
+// l'aperçu montre le texte tel quel, sans retouche.
+async function markdownVersHtml(pandoc, markdown, separateurs) {
   var tempMd = tempDir + 'typonanny_' + guid() + '.md';
   var tempHtml = tempMd.slice(0, -3) + '.html';
   try {
-    await SG.write(tempMd, markdown);
-    await executerPandoc(pandoc, '--wrap=none -f markdown-raw_html -t html -o ' +
+    await SG.write(tempMd, echapperSeparateurs(markdown, separateurs));
+    await executerPandoc(pandoc, '--wrap=none -f markdown-raw_html-smart -t html -o ' +
       q(tempHtml) + ' ' + q(tempMd));
     var t = (await SG.read(tempHtml)).text;
     if (t === null) throw new Error('conversion Pandoc vide');
@@ -975,7 +1048,7 @@ function renduSommaire(texte) {
 async function construireApercu(nomDocument, avantT, corrige, finalTexte, pandoc) {
   var mise = null;
   if (pandoc !== null)
-    try { mise = await markdownVersHtml(pandoc, finalTexte); }
+    try { mise = await markdownVersHtml(pandoc, finalTexte, separateursDe(_options)); }
     catch (e) { }
   if (mise === null) mise = renduSommaire(finalTexte);
 
@@ -1048,7 +1121,7 @@ async function chargerFichier(chemin) {
       // complet), sinon texte brut extrait du XML.
       var pandoc = await trouverPandoc();
       if (pandoc !== null) {
-        setAvant(await importerEnMarkdown(pandoc, chemin));
+        setAvant(await importerEnMarkdown(pandoc, chemin, separateursDe(_options)));
         _formatSource = ext.slice(1);
         setStatus(chemin + " — importé via Pandoc : l'enregistrement " +
           'redonnera un .' + _formatSource + " avec ses styles d'origine.", 'ok');
@@ -1200,11 +1273,11 @@ async function enregistrer() {
     if (extOut === '.docx' || extOut === '.odt') {
       var pandoc = await trouverPandoc();
       if (pandoc === null)
-        throw new Error('Pandoc introuvable — enregistrez en .txt/.md, ' +
-          'ou installez Pandoc via Skadoosh.');
+        throw new Error('Pandoc introuvable — enregistrez en .txt/.md ; ' +
+          'Pandoc se télécharge au prochain lancement (connexion requise).');
       // le document d'origine sert de gabarit de styles
       await exporterDepuisMarkdown(pandoc, _resultat, s.path,
-        memeFormat ? _fichierSource : null);
+        memeFormat ? _fichierSource : null, separateursDe(_options));
       setStatus('Enregistré : ' + s.path +
         (memeFormat && !texteIntact
           ? ' — retouches manuelles incluses (mise en forme reconstruite ' +
@@ -1241,6 +1314,12 @@ function ouvrirRegles() {
     grille.appendChild(label);
   });
   document.getElementById('chk-signaler').checked = _options.signalerSeulement;
+  var chkSep = document.getElementById('chk-sep');
+  var champSep = document.getElementById('sep-champ');
+  chkSep.checked = _options.protegerSeparateurs;
+  champSep.value = _options.separateurs || '';
+  champSep.disabled = !chkSep.checked;
+  chkSep.onchange = function () { champSep.disabled = !chkSep.checked; };
   document.getElementById('voile-regles').classList.add('ouvert');
 }
 
@@ -1256,6 +1335,8 @@ async function validerRegles() {
     o[cle] = document.getElementById('regle-' + cle).checked;
   });
   o.signalerSeulement = document.getElementById('chk-signaler').checked;
+  o.protegerSeparateurs = document.getElementById('chk-sep').checked;
+  o.separateurs = document.getElementById('sep-champ').value.trim();
   _options = o;
   fermerRegles();
   await sauverOptions(o);

@@ -1,5 +1,26 @@
 ﻿# Changelog — Typonanny
 
+## 1.6.1 — 2026-09-09
+
+- **Plus d'antislashs parasites à l'import des .docx/.odt.** Le writer
+  Markdown de Pandoc (extension « smart ») échappait les guillemets droits,
+  les apostrophes et les points de suspension (`\"`, `\'`, `\...`) pour
+  qu'ils ne soient pas réinterprétés — c'est justement le travail de la
+  nounou, et ces antislashs se retrouvaient dans le texte et parfois dans
+  les corrections. Import, export et aperçu passent en `markdown-smart` :
+  le texte arrive tel quel. Un tiret de dialogue en début de ligne, que
+  Pandoc échappe en `\-` (sinon ce serait une liste), est reconnu et
+  corrigé en cadratin — l'antislash part avec la correction.
+- **Séparateurs de texte protégés.** Nouvelle section dans les Règles :
+  « Ne pas corriger les séparateurs de texte », avec la liste des symboles
+  (par défaut `***`, un par mot). Une ligne qui n'est qu'un de ces
+  symboles n'est jamais touchée, et elle survit à l'aller-retour
+  .docx/.odt : Pandoc la renvoyait échappée (`\*\*\*`), elle est
+  déséchappée pour l'édition puis ré-échappée juste avant l'export, pour
+  ne pas devenir un filet horizontal.
+- La fenêtre des règles s'élargit (560 × 632). Les deux éditions,
+  Windows et macOS, reçoivent le correctif.
+
 ## 1.6.0 — 2026-09-09
 
 - **Typonanny prend son indépendance.** Elle quitte le dépôt du hub

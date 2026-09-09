@@ -24,13 +24,15 @@ namespace Typonanny
         private readonly CheckBox[] _cases;
         private readonly string[] _cles;
         private readonly CheckBox _signaler;
+        private readonly CheckBox _protegerSeparateurs;
+        private readonly RoundedField _separateurs;
         public OptionsTypo Resultat;
 
         public ReglesDialog(OptionsTypo o)
         {
             Theme.Dialogue(this, "Règles typographiques — Typonanny");
             Font = new Font("Segoe UI", 9f);   // deux colonnes de cases : serré
-            ClientSize = new Size(500, 520);
+            ClientSize = new Size(560, 632);
 
             var titrePre = new Label();
             titrePre.Text = "Préréglage";
@@ -49,7 +51,7 @@ namespace Typonanny
             titreRegles.Text = "Règles (le préréglage Minimal ignore celles marquées °)";
             titreRegles.Font = new Font("Segoe UI Semibold", 10f);
             titreRegles.ForeColor = Theme.OrClair;
-            titreRegles.SetBounds(16, 116, 460, 20);
+            titreRegles.SetBounds(16, 116, 520, 20);
 
             var libelles = new string[] {
                 "Espaces (doubles, fins de ligne)",
@@ -84,7 +86,8 @@ namespace Typonanny
                 chk.Checked = valeurs[i];
                 chk.ForeColor = Theme.Texte;
                 var col = i % 2; var lg = i / 2;
-                chk.SetBounds(16 + col * 240, 140 + lg * 26, 236, 24);
+                // colonne de droite plus large : ses libellés sont les plus longs
+                chk.SetBounds(16 + col * 250, 140 + lg * 26, col == 0 ? 246 : 280, 24);
                 _cases[i] = chk;
                 Controls.Add(chk);
             }
@@ -93,30 +96,62 @@ namespace Typonanny
             _signaler.Text = "Signaler seulement : rapport complet, aucune correction écrite";
             _signaler.Checked = o.signalerSeulement;
             _signaler.ForeColor = Theme.OrClair;
-            _signaler.SetBounds(16, 336, 460, 24);
+            _signaler.SetBounds(16, 336, 520, 24);
+
+            // Séparateurs de texte : une ligne qui n'est qu'un « *** » (ou
+            // tout symbole de la liste) reste telle quelle.
+            var titreSep = new Label();
+            titreSep.Text = "Séparateurs de texte";
+            titreSep.Font = new Font("Segoe UI Semibold", 10f);
+            titreSep.ForeColor = Theme.OrClair;
+            titreSep.SetBounds(16, 372, 520, 20);
+
+            _protegerSeparateurs = new CheckBox();
+            _protegerSeparateurs.Text = "Ne pas corriger les séparateurs de texte (lignes qui ne contiennent que l'un de ces symboles) :";
+            _protegerSeparateurs.Checked = o.protegerSeparateurs;
+            _protegerSeparateurs.ForeColor = Theme.Texte;
+            _protegerSeparateurs.SetBounds(16, 396, 528, 24);
+
+            _separateurs = new RoundedField();
+            _separateurs.Text = o.separateurs ?? "";
+            _separateurs.Font = new Font("Consolas", 10f);
+            _separateurs.SetBounds(36, 424, 508, 30);
+            _separateurs.Enabled = o.protegerSeparateurs;
+            _protegerSeparateurs.CheckedChanged += delegate(object s, EventArgs e)
+            {
+                _separateurs.Enabled = _protegerSeparateurs.Checked;
+            };
+
+            var noteSep = new Label();
+            noteSep.Text = "Un symbole par mot, séparés par des espaces (par exemple : ***  ~  ---). " +
+                "Ils survivent aussi à l'aller-retour .docx/.odt.";
+            noteSep.ForeColor = Theme.TexteDoux;
+            noteSep.SetBounds(36, 458, 508, 36);
 
             var note = new Label();
             note.Text = "Les listes de ligatures sont de simples fichiers texte dans " +
                 "config\\ — éditez-les au Bloc-notes, Typonanny les relit à chaque " +
                 "lancement. Le reste des réglages vit dans config\\typo.conf.";
             note.ForeColor = Theme.TexteDoux;
-            note.SetBounds(16, 372, 460, 56);
+            note.SetBounds(16, 502, 528, 56);
 
             var ok = new RoundedButton();
             ok.Text = "Enregistrer";
-            ok.SetBounds(384, 472, 100, 32);
+            ok.SetBounds(444, 584, 100, 32);
             Theme.StyleButton(ok, true);
             ok.Click += delegate(object s, EventArgs e) { Valider(); };
 
             var cancel = new RoundedButton();
             cancel.Text = "Annuler";
-            cancel.SetBounds(280, 472, 96, 32);
+            cancel.SetBounds(340, 584, 96, 32);
             Theme.StyleButton(cancel, false);
             cancel.Click += delegate(object s, EventArgs e) { DialogResult = DialogResult.Cancel; };
 
             Controls.Add(titrePre); Controls.Add(_in); Controls.Add(_souple);
             Controls.Add(_minimal); Controls.Add(titreRegles);
-            Controls.Add(_signaler); Controls.Add(note);
+            Controls.Add(_signaler); Controls.Add(titreSep);
+            Controls.Add(_protegerSeparateurs); Controls.Add(_separateurs);
+            Controls.Add(noteSep); Controls.Add(note);
             Controls.Add(ok); Controls.Add(cancel);
             AcceptButton = ok; CancelButton = cancel;
         }
@@ -132,7 +167,7 @@ namespace Typonanny
             var r = new RadioButton();
             r.Text = texte;
             r.ForeColor = Theme.Texte;
-            r.SetBounds(16, y, 470, 22);
+            r.SetBounds(16, y, 528, 22);
             return r;
         }
 
@@ -148,6 +183,8 @@ namespace Typonanny
             o.ligaturesOe = valeurs[9]; o.ligaturesAe = valeurs[10]; o.dimensions = valeurs[11];
             o.ordinaux = valeurs[12]; o.signalerMajuscules = valeurs[13];
             o.signalerSeulement = _signaler.Checked;
+            o.protegerSeparateurs = _protegerSeparateurs.Checked;
+            o.separateurs = _separateurs.Text.Trim();
             Resultat = o;
             DialogResult = DialogResult.OK;
         }

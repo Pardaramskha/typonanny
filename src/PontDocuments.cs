@@ -78,17 +78,64 @@ namespace Typonanny
 
         // Document -> Markdown éditable. --wrap=none : pas de retours à la
         // ligne artificiels qui perturberaient les règles typographiques.
-        public static string ImporterEnMarkdown(string pandoc, string document)
+        // -smart : sans ça, le writer de Pandoc échappe les guillemets
+        // droits, les apostrophes et les points de suspension (\", \', \...)
+        // pour qu'ils ne soient pas « corrigés » à la relecture — c'est
+        // justement le travail de la nounou, et ces antislashs se
+        // retrouvaient dans le texte. Même drapeau à l'export et à l'aperçu.
+        // separateurs : les lignes qui ne contiennent qu'un séparateur de
+        // texte (« *** ») reviennent échappées (\*\*\*) ; on les déséchappe
+        // pour l'édition, EchapperSeparateurs les rétablit avant Pandoc.
+        public static string ImporterEnMarkdown(string pandoc, string document,
+            string[] separateurs)
         {
             var temp = Path.Combine(Path.GetTempPath(),
                 "typonanny_" + Guid.NewGuid().ToString("N") + ".md");
             try
             {
-                Executer(pandoc, "--wrap=none -t markdown -o \"" + temp +
+                Executer(pandoc, "--wrap=none -t markdown-smart -o \"" + temp +
                     "\" \"" + document + "\"");
-                return File.ReadAllText(temp);
+                return DesechapperSeparateurs(File.ReadAllText(temp), separateurs);
             }
             finally { try { if (File.Exists(temp)) File.Delete(temp); } catch { } }
+        }
+
+        // Une ligne « \*\*\* » (séparateur échappé par Pandoc) -> « *** ».
+        public static string DesechapperSeparateurs(string markdown, string[] separateurs)
+        {
+            if (separateurs == null || separateurs.Length == 0) return markdown;
+            // (\r? : avec (?m), $ ne précède que \n — les fins de ligne
+            // Windows laissent un \r qu'il faut laisser hors du corps)
+            return Regex.Replace(markdown, @"(?m)^([ \t]*)(\S.*?)([ \t]*)(?=\r?$)", delegate(Match m)
+            {
+                var nu = m.Groups[2].Value.Replace("\\", "");
+                foreach (var s in separateurs)
+                    if (nu == s) return m.Groups[1].Value + s + m.Groups[3].Value;
+                return m.Value;
+            });
+        }
+
+        // L'inverse, avant de rendre le Markdown à Pandoc : une ligne qui
+        // n'est qu'un séparateur redevient du texte échappé, sinon « *** »
+        // serait lu comme un filet horizontal et « --- » comme un titre.
+        public static string EchapperSeparateurs(string markdown, string[] separateurs)
+        {
+            if (separateurs == null || separateurs.Length == 0) return markdown;
+            return Regex.Replace(markdown, @"(?m)^([ \t]*)(\S.*?)([ \t]*)(?=\r?$)", delegate(Match m)
+            {
+                foreach (var s in separateurs)
+                    if (m.Groups[2].Value == s)
+                    {
+                        var sb = new StringBuilder();
+                        foreach (var c in s)
+                        {
+                            if ("\\*_#-+>~=|`[]!<".IndexOf(c) >= 0) sb.Append('\\');
+                            sb.Append(c);
+                        }
+                        return m.Groups[1].Value + sb + m.Groups[3].Value;
+                    }
+                return m.Value;
+            });
         }
 
         // Markdown nettoyé -> document (.docx ou .odt selon l'extension de
@@ -97,22 +144,17 @@ namespace Typonanny
         // le document d'origine sert de gabarit de styles (--reference-doc),
         // pour que polices et titres restent ceux de la maison.
         public static void ExporterDepuisMarkdown(string pandoc, string markdown,
-            string dest)
-        {
-            ExporterDepuisMarkdown(pandoc, markdown, dest, null);
-        }
-
-        public static void ExporterDepuisMarkdown(string pandoc, string markdown,
-            string dest, string referenceDoc)
+            string dest, string referenceDoc, string[] separateurs)
         {
             var temp = Path.Combine(Path.GetTempPath(),
                 "typonanny_" + Guid.NewGuid().ToString("N") + ".md");
             try
             {
-                File.WriteAllText(temp, markdown, new UTF8Encoding(false));
+                File.WriteAllText(temp, EchapperSeparateurs(markdown, separateurs),
+                    new UTF8Encoding(false));
                 var gabarit = referenceDoc != null && File.Exists(referenceDoc)
                     ? "--reference-doc=\"" + referenceDoc + "\" " : "";
-                Executer(pandoc, "--standalone -f markdown " + gabarit +
+                Executer(pandoc, "--standalone -f markdown-smart " + gabarit +
                     "-o \"" + dest + "\" \"" + temp + "\"");
             }
             finally { try { if (File.Exists(temp)) File.Delete(temp); } catch { } }
@@ -338,17 +380,20 @@ namespace Typonanny
 
         // Markdown -> fragment HTML (pour l'aperçu dans le navigateur) :
         // gras, italiques, exposants, listes… rendus par Pandoc.
-        public static string MarkdownVersHtml(string pandoc, string markdown)
+        public static string MarkdownVersHtml(string pandoc, string markdown,
+            string[] separateurs)
         {
             var tempMd = Path.Combine(Path.GetTempPath(),
                 "typonanny_" + Guid.NewGuid().ToString("N") + ".md");
             var tempHtml = Path.ChangeExtension(tempMd, ".html");
             try
             {
-                File.WriteAllText(tempMd, markdown, new UTF8Encoding(false));
+                File.WriteAllText(tempMd, EchapperSeparateurs(markdown, separateurs),
+                    new UTF8Encoding(false));
                 // -raw_html : un manuscrit est du texte — une balise <script>
                 // qui traîne doit s'afficher, pas s'exécuter dans l'aperçu.
-                Executer(pandoc, "--wrap=none -f markdown-raw_html -t html -o \"" +
+                // -smart : l'aperçu montre le texte tel quel, sans retouche.
+                Executer(pandoc, "--wrap=none -f markdown-raw_html-smart -t html -o \"" +
                     tempHtml + "\" \"" + tempMd + "\"");
                 return File.ReadAllText(tempHtml);
             }

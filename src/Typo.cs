@@ -39,6 +39,18 @@ namespace Typonanny
         public bool ordinaux = true;         // 2ème -> 2e
         public bool signalerMajuscules = true; // Etat, Elève… (signalement)
         public bool signalerSeulement = false; // rapport sans correction
+        public bool protegerSeparateurs = true; // les séparateurs de texte restent tels quels
+        public string separateurs = "***";      // « *** ~ » : un par mot, séparés par des espaces
+
+        // Les séparateurs à protéger, un par entrée (vide si l'option est off).
+        public string[] Separateurs()
+        {
+            if (!protegerSeparateurs || separateurs == null) return new string[0];
+            var l = new List<string>();
+            foreach (var s in separateurs.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries))
+                if (!l.Contains(s)) l.Add(s);
+            return l.ToArray();
+        }
 
         // Glyphes dépendant du préréglage.
         public char AvantPonctuationHaute()   // ; ! ?
@@ -147,7 +159,7 @@ namespace Typonanny
             // (1) masquer les zones protégées : URL, e-mails, chemins,
             // code Markdown, heures/ratios. Jetons en zone privée Unicode.
             var zones = new List<string>();
-            var travail = Masquer(texte, zones);
+            var travail = Masquer(texte, zones, o.Separateurs());
 
             // (2) espaces bruts
             if (o.espaces)
@@ -211,8 +223,11 @@ namespace Typonanny
             if (o.tiretsDialogue && !o.Minimal())
             {
                 int nDial;
+                // « \- » : Pandoc échappe un tiret en début de ligne (sinon
+                // ce serait une liste) ; le cadratin, lui, n'a pas besoin
+                // d'échappement — l'antislash part avec la correction.
                 travail = RemplacerCompte(travail,
-                    @"(?m)^([ \t]*)-{1,2}[ \t]+", "$1— ", out nDial);
+                    @"(?m)^([ \t]*)\\?-{1,2}[ \t]+", "$1— ", out nDial);
                 r.Compter("tiret(s) de dialogue « — »", nDial);
             }
             if (o.intervalles && !o.Minimal())
@@ -398,15 +413,27 @@ namespace Typonanny
             new Regex(@"\b\d+:\d+\b"),                         // ratio 16:9
         };
 
-        private static string Masquer(string texte, List<string> zones)
+        // Une ligne qui n'est qu'un séparateur de texte (« *** »), avec ou
+        // sans les antislashs d'échappement de Pandoc (« \*\*\* »).
+        private static Regex MotifSeparateur(string sep)
+        {
+            var sb = new StringBuilder(@"(?m)^[ \t]*");
+            foreach (var c in sep) sb.Append(@"\\?").Append(Regex.Escape(c.ToString()));
+            sb.Append(@"[ \t]*(?=\r?$)");
+            return new Regex(sb.ToString());
+        }
+
+        private static string Masquer(string texte, List<string> zones, string[] separateurs)
         {
             // point de départ en zone privée, au-delà de tout PUA déjà présent
             var basePua = 0xE000;
             foreach (var c in texte)
                 if (c >= 0xE000 && c <= 0xF8FF && c >= basePua) basePua = c + 1;
 
+            var motifs = new List<Regex>(MotifsProteges);
+            foreach (var s in separateurs) motifs.Add(MotifSeparateur(s));
             var travail = texte;
-            foreach (var rx in MotifsProteges)
+            foreach (var rx in motifs)
                 travail = rx.Replace(travail, delegate(Match m)
                 {
                     zones.Add(m.Value);
@@ -521,6 +548,8 @@ namespace Typonanny
                 lignes.Add("ordinaux=" + (o.ordinaux ? "1" : "0"));
                 lignes.Add("signalerMajuscules=" + (o.signalerMajuscules ? "1" : "0"));
                 lignes.Add("signalerSeulement=" + (o.signalerSeulement ? "1" : "0"));
+                lignes.Add("protegerSeparateurs=" + (o.protegerSeparateurs ? "1" : "0"));
+                lignes.Add("separateurs=" + (o.separateurs ?? ""));
                 File.WriteAllLines(Path.Combine(dir, "typo.conf"),
                     lignes.ToArray(), new UTF8Encoding(true));
             }
@@ -561,6 +590,8 @@ namespace Typonanny
                         case "ordinaux": o.ordinaux = actif; break;
                         case "signalerMajuscules": o.signalerMajuscules = actif; break;
                         case "signalerSeulement": o.signalerSeulement = actif; break;
+                        case "protegerSeparateurs": o.protegerSeparateurs = actif; break;
+                        case "separateurs": o.separateurs = val; break;
                     }
                 }
             }
