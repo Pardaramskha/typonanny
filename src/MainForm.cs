@@ -443,10 +443,8 @@ namespace Typonanny
                 var chemin = Path.Combine(dir, "apercu.html");
                 var nomDoc = _fichierSource != null
                     ? Path.GetFileName(_fichierSource) : "texte collé";
-                var pandoc = PontDocuments.TrouverPandoc(_appDir);
                 File.WriteAllText(chemin,
-                    Apercu.Construire(nomDoc, _avantNettoye, _etapes, _resultat, pandoc,
-                        _options.Separateurs()),
+                    Apercu.Construire(nomDoc, _avantNettoye, _etapes, _options.Separateurs()),
                     new UTF8Encoding(true));
                 System.Diagnostics.Process.Start(chemin);
                 _status.Text = "Aperçu ouvert dans le navigateur — " + chemin;

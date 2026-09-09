@@ -1,35 +1,31 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
-// Apercu.cs — l'aperçu HTML ouvert dans le navigateur : vue
-// « Corrections » (diff surligné au caractère près, chaque retouche
-// attribuée à sa règle pour le filtre) et vue « Mise en page » (rendu
-// riche via Pandoc, mini-Markdown maison en repli). Un « paper » flottant
-// en haut à droite règle le thème (sombre / clair), les cinq couleurs, et
-// les règles dont on veut voir les corrections — le tout mémorisé dans
-// le navigateur (localStorage).
+// Apercu.cs — l'aperçu HTML ouvert dans le navigateur : UNE vue, le texte
+// mis en page (titres, gras, italiques, listes, citations, séparateurs
+// centrés) avec chaque retouche surlignée au caractère près et attribuée
+// à sa règle (pour le filtre). Un « paper » flottant en haut à droite
+// règle le thème (sombre / clair), les cinq couleurs, et les règles dont
+// on veut voir les corrections — le tout mémorisé dans le navigateur
+// (localStorage). Les antislashs d'échappement du Markdown n'y
+// apparaissent jamais.
 
 namespace Typonanny
 {
     public static class Apercu
     {
         // avant = le texte d'origine, etapes = le texte après chaque règle
-        // (cf. Typo.Nettoyer), finalTexte = ce que Copier/Enregistrer
-        // produiront (le texte corrigé, sauf en mode signalement).
+        // (cf. Typo.Nettoyer), separateurs = les séparateurs de texte
+        // protégés (rendus centrés).
         public static string Construire(string nomDocument, string avant,
-            List<Etape> etapes, string finalTexte, string pandoc, string[] separateurs)
+            List<Etape> etapes, string[] separateurs)
         {
-            string mise = null;
-            if (pandoc != null)
-                try { mise = PontDocuments.MarkdownVersHtml(pandoc, finalTexte, separateurs); }
-                catch { }
-            if (mise == null) mise = RenduSommaire(Desechapper(finalTexte));
-
             var regles = new List<Etape>();
-            var corrections = ConstruireDiff(avant, etapes, regles);
+            var lignes = ConstruireDiff(avant, etapes, regles);
+            var corps = MettreEnPage(lignes, separateurs);
 
             var sb = new StringBuilder();
             sb.Append("<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n");
@@ -40,13 +36,9 @@ namespace Typonanny
             sb.Append("</style>\n</head>\n<body>\n<header>\n");
             sb.Append("<h1>⭐ Stargazer — Typonanny</h1>\n");
             sb.Append("<p>").Append(Echapper(nomDocument)).Append("</p>\n");
-            sb.Append("<nav>\n");
-            sb.Append("<button id=\"bc\" class=\"actif\" onclick=\"voir('c')\">Corrections</button>\n");
-            sb.Append("<button id=\"bm\" onclick=\"voir('m')\">Mise en page</button>\n");
-            sb.Append("</nav>\n</header>\n");
+            sb.Append("</header>\n");
             sb.Append(Papier(regles));
-            sb.Append("<main id=\"corrections\">\n").Append(corrections).Append("\n</main>\n");
-            sb.Append("<main id=\"mise\" style=\"display:none\">\n").Append(mise).Append("\n</main>\n");
+            sb.Append("<main>\n").Append(corps).Append("\n</main>\n");
             sb.Append("<script>\n").Append(Script()).Append("</script>\n</body>\n</html>\n");
             return sb.ToString();
         }
@@ -64,18 +56,21 @@ namespace Typonanny
             sb.Append("padding:1.2em 2em;font-family:'Segoe UI',sans-serif}\n");
             sb.Append("header h1{color:var(--orclair);font-size:1.25em;margin:0}\n");
             sb.Append("header p{color:var(--intact);margin:.3em 0 0;font-size:.95em}\n");
-            sb.Append("nav{margin-top:.8em}\n");
-            sb.Append("nav button,#papier button{background:var(--panneau);color:var(--texte);border:1px solid var(--bordure);");
+            sb.Append("#papier button{background:var(--panneau);color:var(--texte);border:1px solid var(--bordure);");
             sb.Append("border-radius:8px;padding:.35em 1em;margin-right:.5em;cursor:pointer;");
             sb.Append("font-family:'Segoe UI',sans-serif;font-size:.95em}\n");
-            sb.Append("nav button.actif,#papier button.actif{background:var(--or);color:#14141e;border-color:var(--or)}\n");
+            sb.Append("#papier button.actif{background:var(--or);color:#14141e;border-color:var(--or)}\n");
             sb.Append("main{max-width:44em;margin:2.5em auto;padding:0 1.5em;");
             sb.Append("font-family:Georgia,'Times New Roman',serif;font-size:1.05em;line-height:1.75}\n");
-            sb.Append("main h1,main h2,main h3,main h4{color:var(--orclair);font-family:'Segoe UI',sans-serif;line-height:1.3}\n");
+            // pre-wrap : les espaces (doubles, fines, insécables) se voient tels quels
+            sb.Append("main p,main li,main h1,main h2,main h3,main h4,main h5,main h6{white-space:pre-wrap}\n");
+            sb.Append("main h1,main h2,main h3,main h4,main h5,main h6{color:var(--orclair);font-family:'Segoe UI',sans-serif;line-height:1.3}\n");
             sb.Append("main a{color:var(--lien)}\n");
             sb.Append("blockquote{border-left:3px solid var(--or);margin-left:0;padding-left:1em;color:var(--intact)}\n");
-            sb.Append("code{background:var(--panneau);padding:.1em .3em;border-radius:4px}\n");
-            sb.Append("pre.diff{white-space:pre-wrap;font-family:inherit;margin:0}\n");
+            sb.Append("code{background:var(--panneau);padding:.1em .3em;border-radius:4px;font-size:.9em}\n");
+            sb.Append("p.sep{text-align:center;letter-spacing:.4em;color:var(--intact)}\n");
+            sb.Append("hr{border:0;border-top:1px solid var(--bordure);margin:1.5em 0}\n");
+            sb.Append("p.note{color:var(--intact);font-style:italic}\n");
             sb.Append("del{background:color-mix(in srgb,var(--suppr) 22%,transparent);color:var(--suppr);text-decoration:line-through}\n");
             sb.Append("ins{background:color-mix(in srgb,var(--ajout) 22%,transparent);color:var(--ajout);text-decoration:none}\n");
             sb.Append(".ctx{color:var(--intact)}\n");
@@ -155,34 +150,28 @@ namespace Typonanny
             sb.Append("function reinit(){etat.couleurs={};sauver();appliquer();}\n");
             sb.Append("function plier(){etat.plie=!etat.plie;sauver();appliquer();}\n");
             sb.Append("function filtrer(){etat.off=[];document.querySelectorAll('#papier input[type=checkbox]').forEach(function(c){if(!c.checked)etat.off.push(c.getAttribute('data-c'));});sauver();appliquer();}\n");
-            sb.Append("function voir(v){\n");
-            sb.Append("document.getElementById('corrections').style.display=v=='c'?'block':'none';\n");
-            sb.Append("document.getElementById('mise').style.display=v=='m'?'block':'none';\n");
-            sb.Append("document.getElementById('bc').className=v=='c'?'actif':'';\n");
-            sb.Append("document.getElementById('bm').className=v=='m'?'actif':'';\n}\n");
             sb.Append("var st=document.createElement('style');st.id='filtre';document.head.appendChild(st);appliquer();\n");
             return sb.ToString();
         }
 
-        // ------------------------------------------------- vue Corrections
+        // ------------------------------------------------------ le diff
         // Le nettoyage ne touche jamais aux sauts de ligne : chaque ligne se
         // compare à son homologue, étape par étape (une étape = une règle),
         // pour que chaque retouche porte le nom de sa règle. « regles »
         // reçoit la liste des règles rencontrées avec leur nombre de
         // retouches (dans Texte), pour le filtre du paper.
-        private static string ConstruireDiff(string avant, List<Etape> etapes, List<Etape> regles)
+
+        // Une ligne du résultat : son HTML (texte échappé + <ins>/<del>) et
+        // son texte final (pour reconnaître titres, listes, séparateurs…).
+        private class Ligne
         {
-            var sb = new StringBuilder();
-            sb.Append("<pre class=\"diff\">");
+            public string Html; public string Texte; public bool Change;
+        }
+
+        private static List<Ligne> ConstruireDiff(string avant, List<Etape> etapes, List<Etape> regles)
+        {
+            var resultat = new List<Ligne>();
             var corrige = etapes.Count > 0 ? etapes[etapes.Count - 1].Texte : avant;
-            if (avant == corrige)
-            {
-                sb.Append("<span class=\"ctx\">Aucune correction : ce texte était " +
-                    "déjà impeccable.</span>\n");
-                sb.Append(Echapper(Desechapper(corrige)));
-                sb.Append("</pre>");
-                return sb.ToString();
-            }
             var comptes = new Dictionary<string, int>();
             var libelles = new Dictionary<string, string>();
             var ordre = new List<string>();
@@ -210,13 +199,12 @@ namespace Typonanny
                         change = true;
                         Composer(items, cible, etapes[k].Cle);
                     }
-                    if (!change)
-                        sb.Append("<span class=\"ctx\">").Append(Echapper(la[i])).Append("</span>\n");
-                    else
-                    {
-                        Rendre(sb, items, comptes);
-                        sb.Append('\n');
-                    }
+                    var ligne = new Ligne();
+                    ligne.Change = change;
+                    ligne.Texte = Courant(items);
+                    ligne.Html = change ? Rendre(items, comptes)
+                        : "<span class=\"ctx\">" + Echapper(la[i]) + "</span>";
+                    resultat.Add(ligne);
                 }
             }
             else
@@ -226,9 +214,10 @@ namespace Typonanny
                 var items = new List<Item>();
                 foreach (var c in Desechapper(avant).Replace("\r\n", "\n")) items.Add(new Item(c, ' ', null));
                 Composer(items, Desechapper(corrige).Replace("\r\n", "\n"), "autre");
-                Rendre(sb, items, comptes);
+                var ligne = new Ligne();
+                ligne.Change = true; ligne.Texte = Courant(items); ligne.Html = Rendre(items, comptes);
+                resultat.Add(ligne);
             }
-            sb.Append("</pre>");
             foreach (var cle in ordre)
             {
                 if (comptes[cle] == 0) continue;
@@ -237,7 +226,7 @@ namespace Typonanny
                 e.Texte = comptes[cle].ToString(CultureInfo.InvariantCulture);
                 regles.Add(e);
             }
-            return sb.ToString();
+            return resultat;
         }
 
         // Un caractère de la ligne composée : intact (' '), inséré ('+') ou
@@ -265,7 +254,6 @@ namespace Typonanny
             if (ops == null)
             {
                 // diff trop gros : tout l'ancien barré, tout le nouveau inséré
-                foreach (var it in items) if (it.Kind == '+') it.Kind = '-';
                 items.RemoveAll(delegate(Item it) { return it.Kind == '+'; });
                 foreach (var it in items) { it.Kind = '-'; if (it.Cle == null) it.Cle = cle; }
                 foreach (var c in cible) items.Add(new Item(c, '+', cle));
@@ -291,8 +279,9 @@ namespace Typonanny
         }
 
         // Regroupe les caractères contigus de même nature et de même règle.
-        private static void Rendre(StringBuilder sb, List<Item> items, Dictionary<string, int> comptes)
+        private static string Rendre(List<Item> items, Dictionary<string, int> comptes)
         {
+            var sb = new StringBuilder();
             var i = 0;
             while (i < items.Count)
             {
@@ -307,9 +296,115 @@ namespace Typonanny
                   .Append(texte).Append("</").Append(balise).Append('>');
                 if (cle != null && comptes.ContainsKey(cle)) comptes[cle]++;
             }
+            return sb.ToString();
         }
 
-        // ------------------------------------------------- vue Mise en page
+        // ------------------------------------------------- mise en page
+        // L'essentiel du Markdown, appliqué PAR-DESSUS le diff : titres,
+        // listes, citations, séparateurs centrés, gras, italiques,
+        // exposants/indices, code, liens. Les marques de bloc se
+        // reconnaissent sur le texte final de la ligne, puis se retirent du
+        // HTML (qui peut commencer par le <span> du texte intact).
+        private static string MettreEnPage(List<Ligne> lignes, string[] separateurs)
+        {
+            var sb = new StringBuilder();
+            var change = false;
+            foreach (var l in lignes) if (l.Change) change = true;
+            if (!change)
+                sb.Append("<p class=\"note\">Aucune correction : ce texte était déjà impeccable.</p>\n");
+
+            var para = new List<string>();   // lignes du paragraphe en cours
+            string bloc = null;               // "ul", "ol", "bq" ouvert
+            var seps = new HashSet<string>(separateurs ?? new string[0]);
+            Action fermerPara = delegate
+            {
+                if (para.Count == 0) return;
+                sb.Append("<p>").Append(string.Join("<br>\n", para.ToArray())).Append("</p>\n");
+                para.Clear();
+            };
+            Action fermerBloc = delegate
+            {
+                if (bloc == "ul") sb.Append("</ul>\n");
+                else if (bloc == "ol") sb.Append("</ol>\n");
+                else if (bloc == "bq") sb.Append("</blockquote>\n");
+                bloc = null;
+            };
+
+            foreach (var l in lignes)
+            {
+                var t = l.Texte.TrimEnd();
+                if (t.Trim().Length == 0) { fermerPara(); fermerBloc(); continue; }
+
+                var m = Regex.Match(t, @"^(#{1,6})[ \t]+");
+                if (m.Success)
+                {
+                    fermerPara(); fermerBloc();
+                    var n = m.Groups[1].Length;
+                    sb.Append("<h").Append(n).Append('>')
+                      .Append(EnLigne(SansMarque(l.Html, @"#{1,6}[ \t]+")))
+                      .Append("</h").Append(n).Append(">\n");
+                    continue;
+                }
+                if (seps.Contains(t.Trim()))
+                {
+                    fermerPara(); fermerBloc();
+                    sb.Append("<p class=\"sep\">").Append(l.Html).Append("</p>\n");
+                    continue;
+                }
+                if (Regex.IsMatch(t.Trim(), @"^(-{3,}|\*{3,}|_{3,})$"))   // filet horizontal
+                {
+                    fermerPara(); fermerBloc();
+                    sb.Append("<hr>\n");
+                    continue;
+                }
+                if (Regex.IsMatch(t, @"^[-*+][ \t]+\S"))
+                {
+                    fermerPara();
+                    if (bloc != "ul") { fermerBloc(); sb.Append("<ul>\n"); bloc = "ul"; }
+                    sb.Append("<li>").Append(EnLigne(SansMarque(l.Html, @"[-*+][ \t]+"))).Append("</li>\n");
+                    continue;
+                }
+                if (Regex.IsMatch(t, @"^\d+[.)][ \t]+\S"))
+                {
+                    fermerPara();
+                    if (bloc != "ol") { fermerBloc(); sb.Append("<ol>\n"); bloc = "ol"; }
+                    sb.Append("<li>").Append(EnLigne(SansMarque(l.Html, @"\d+[.)][ \t]+"))).Append("</li>\n");
+                    continue;
+                }
+                if (t.StartsWith(">"))
+                {
+                    fermerPara();
+                    if (bloc != "bq") { fermerBloc(); sb.Append("<blockquote>\n"); bloc = "bq"; }
+                    sb.Append("<p>").Append(EnLigne(SansMarque(l.Html, @"&gt;[ \t]*"))).Append("</p>\n");
+                    continue;
+                }
+                if (bloc != null) fermerBloc();
+                para.Add(EnLigne(l.Html));
+            }
+            fermerPara(); fermerBloc();
+            return sb.ToString();
+        }
+
+        // Retire la marque de bloc au début du HTML d'une ligne, qu'elle soit
+        // nue ou déjà dans le <span> du texte intact.
+        private static string SansMarque(string html, string marque)
+        {
+            return Regex.Replace(html, "^((?:<span class=\"ctx\">)?)" + marque, "$1");
+        }
+
+        // Le Markdown en ligne, par-dessus le HTML du diff (les balises
+        // <ins>/<del> peuvent chevaucher : les navigateurs s'en sortent).
+        private static string EnLigne(string h)
+        {
+            h = Regex.Replace(h, @"`([^`\n]+)`", "<code>$1</code>");
+            h = Regex.Replace(h, @"\*\*([^*\n]+)\*\*", "<strong>$1</strong>");
+            h = Regex.Replace(h, @"(?<![\w*])\*([^*\n]+)\*(?![\w*])", "<em>$1</em>");
+            h = Regex.Replace(h, @"(?<![\w_])_([^_\n]+)_(?![\w_])", "<em>$1</em>");
+            h = Regex.Replace(h, @"\^([^\^\s]+)\^", "<sup>$1</sup>");
+            h = Regex.Replace(h, @"(?<!~)~([^~\s]+)~(?!~)", "<sub>$1</sub>");
+            h = Regex.Replace(h, @"\[([^\]\n]+)\]\(([^)\s]+)\)", "<a href=\"$2\">$1</a>");
+            return h;
+        }
 
         // Les antislashs d'échappement du Markdown (\#, 1\., \*) sont des
         // marques de transport : indispensables à l'aller-retour .docx, mais
@@ -317,33 +412,6 @@ namespace Typonanny
         public static string Desechapper(string texte)
         {
             return Regex.Replace(texte, @"\\([\\*_#+>~=|`\[\]!<.\-])", "$1");
-        }
-
-        // Repli sans Pandoc : l'essentiel du Markdown (titres, gras,
-        // italiques, exposants/indices, paragraphes), texte échappé d'abord.
-        private static string RenduSommaire(string texte)
-        {
-            var t = Echapper(texte.Replace("\r\n", "\n"));
-            for (var niveau = 6; niveau >= 1; niveau--)
-            {
-                var diese = new string('#', niveau);
-                t = Regex.Replace(t, @"(?m)^" + diese + @"\s+(.+)$",
-                    "<h" + niveau + ">$1</h" + niveau + ">");
-            }
-            t = Regex.Replace(t, @"\*\*([^*\n]+)\*\*", "<strong>$1</strong>");
-            t = Regex.Replace(t, @"(?<![\w*])\*([^*\n]+)\*(?![\w*])", "<em>$1</em>");
-            t = Regex.Replace(t, @"\^([^\^\s]+)\^", "<sup>$1</sup>");
-            t = Regex.Replace(t, @"(?<!~)~([^~\s]+)~(?!~)", "<sub>$1</sub>");
-
-            var sb = new StringBuilder();
-            foreach (var bloc in Regex.Split(t, @"\n\s*\n"))
-            {
-                var b = bloc.Trim();
-                if (b.Length == 0) continue;
-                if (b.StartsWith("<h")) sb.Append(b).Append('\n');
-                else sb.Append("<p>").Append(b.Replace("\n", "<br>\n")).Append("</p>\n");
-            }
-            return sb.ToString();
         }
 
         private static string Echapper(string s)

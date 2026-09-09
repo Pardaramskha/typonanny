@@ -1084,20 +1084,14 @@ function rendre(items, comptes) {
   return sb;
 }
 
-// La vue « Corrections » : le nettoyage ne touche jamais aux sauts de
-// ligne, donc chaque ligne se compare à son homologue, étape par étape
-// (une étape = une règle), pour que chaque retouche porte le nom de sa
-// règle. « regles » reçoit la liste des règles rencontrées avec leur
-// nombre de retouches, pour le filtre du paper.
+// Le diff : le nettoyage ne touche jamais aux sauts de ligne, donc chaque
+// ligne se compare à son homologue, étape par étape (une étape = une
+// règle), pour que chaque retouche porte le nom de sa règle. Rend une
+// liste de lignes { html, texte, change } ; « regles » reçoit les règles
+// rencontrées avec leur nombre de retouches, pour le filtre du paper.
 function construireDiff(avantT, etapes, regles) {
-  var sb = '<pre class="diff">';
+  var resultat = [];
   var corrige = etapes.length ? etapes[etapes.length - 1].texte : avantT;
-  if (avantT === corrige) {
-    sb += '<span class="ctx">Aucune correction : ce texte était déjà impeccable.</span>\n';
-    sb += echapper(desechapper(corrige));
-    sb += '</pre>';
-    return sb;
-  }
   var comptes = {}, libelles = {}, ordre = [];
   var la = desechapper(avantT).replace(/\r\n/g, '\n').split('\n');
   var lignesEtapes = [];
@@ -1119,8 +1113,8 @@ function construireDiff(avantT, etapes, regles) {
         change = true;
         composer(items, cible, etapes[k].cle);
       }
-      if (!change) sb += '<span class="ctx">' + echapper(la[i]) + '</span>\n';
-      else sb += rendre(items, comptes) + '\n';
+      resultat.push({ change: change, texte: courantDe(items),
+        html: change ? rendre(items, comptes) : '<span class="ctx">' + echapper(la[i]) + '</span>' });
     }
   } else {
     // prudence (ne devrait pas arriver) : un seul diff, sans règle
@@ -1129,36 +1123,95 @@ function construireDiff(avantT, etapes, regles) {
     var av = desechapper(avantT).replace(/\r\n/g, '\n');
     for (var q2 = 0; q2 < av.length; q2++) tous.push({ c: av.charAt(q2), k: ' ', cle: null });
     composer(tous, desechapper(corrige).replace(/\r\n/g, '\n'), 'autre');
-    sb += rendre(tous, comptes);
+    resultat.push({ change: true, texte: courantDe(tous), html: rendre(tous, comptes) });
   }
-  sb += '</pre>';
   ordre.forEach(function (cle) {
     if (comptes[cle] > 0) regles.push({ cle: cle, libelle: libelles[cle], n: comptes[cle] });
   });
-  return sb;
+  return resultat;
 }
 
-// Repli sans Pandoc : l'essentiel du Markdown (titres, gras, italiques,
-// exposants/indices, paragraphes), texte échappé d'abord.
-function renduSommaire(texte) {
-  var t = echapper(texte.replace(/\r\n/g, '\n'));
-  for (var niveau = 6; niveau >= 1; niveau--) {
-    var diese = new Array(niveau + 1).join('#');
-    t = t.replace(new RegExp('^' + diese + '\\s+(.+)$', 'gm'),
-      '<h' + niveau + '>$1</h' + niveau + '>');
-  }
-  t = t.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
-  t = t.replace(/(?<![\w*])\*([^*\n]+)\*(?![\w*])/g, '<em>$1</em>');
-  t = t.replace(/\^([^\^\s]+)\^/g, '<sup>$1</sup>');
-  t = t.replace(/(?<!~)~([^~\s]+)~(?!~)/g, '<sub>$1</sub>');
+// Retire la marque de bloc au début du HTML d'une ligne, qu'elle soit nue
+// ou déjà dans le <span> du texte intact.
+function sansMarque(html, marque) {
+  return html.replace(new RegExp('^((?:<span class="ctx">)?)' + marque), '$1');
+}
 
+// Le Markdown en ligne, par-dessus le HTML du diff (les balises <ins>/<del>
+// peuvent chevaucher : les navigateurs s'en sortent).
+function enLigne(h) {
+  h = h.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  h = h.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  h = h.replace(/(?<![\w*])\*([^*\n]+)\*(?![\w*])/g, '<em>$1</em>');
+  h = h.replace(/(?<![\w_])_([^_\n]+)_(?![\w_])/g, '<em>$1</em>');
+  h = h.replace(/\^([^\^\s]+)\^/g, '<sup>$1</sup>');
+  h = h.replace(/(?<!~)~([^~\s]+)~(?!~)/g, '<sub>$1</sub>');
+  h = h.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, '<a href="$2">$1</a>');
+  return h;
+}
+
+// L'essentiel du Markdown, appliqué PAR-DESSUS le diff : titres, listes,
+// citations, séparateurs centrés, gras, italiques, exposants/indices,
+// code, liens. Les marques de bloc se reconnaissent sur le texte final de
+// la ligne, puis se retirent du HTML.
+function mettreEnPage(lignes, separateurs) {
   var sb = '';
-  t.split(/\n\s*\n/).forEach(function (bloc) {
-    var b = bloc.trim();
-    if (!b.length) return;
-    if (b.indexOf('<h') === 0) sb += b + '\n';
-    else sb += '<p>' + b.split('\n').join('<br>\n') + '</p>\n';
+  var change = lignes.some(function (l) { return l.change; });
+  if (!change) sb += '<p class="note">Aucune correction : ce texte était déjà impeccable.</p>\n';
+  var para = [], bloc = null;
+  function fermerPara() {
+    if (!para.length) return;
+    sb += '<p>' + para.join('<br>\n') + '</p>\n';
+    para = [];
+  }
+  function fermerBloc() {
+    if (bloc === 'ul') sb += '</ul>\n';
+    else if (bloc === 'ol') sb += '</ol>\n';
+    else if (bloc === 'bq') sb += '</blockquote>\n';
+    bloc = null;
+  }
+  lignes.forEach(function (l) {
+    var t = l.texte.replace(/\s+$/, '');
+    if (!t.trim().length) { fermerPara(); fermerBloc(); return; }
+    var m = /^(#{1,6})[ \t]+/.exec(t);
+    if (m) {
+      fermerPara(); fermerBloc();
+      var n = m[1].length;
+      sb += '<h' + n + '>' + enLigne(sansMarque(l.html, '#{1,6}[ \\t]+')) + '</h' + n + '>\n';
+      return;
+    }
+    if (separateurs.indexOf(t.trim()) >= 0) {
+      fermerPara(); fermerBloc();
+      sb += '<p class="sep">' + l.html + '</p>\n';
+      return;
+    }
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(t.trim())) {   // filet horizontal
+      fermerPara(); fermerBloc();
+      sb += '<hr>\n';
+      return;
+    }
+    if (/^[-*+][ \t]+\S/.test(t)) {
+      fermerPara();
+      if (bloc !== 'ul') { fermerBloc(); sb += '<ul>\n'; bloc = 'ul'; }
+      sb += '<li>' + enLigne(sansMarque(l.html, '[-*+][ \\t]+')) + '</li>\n';
+      return;
+    }
+    if (/^\d+[.)][ \t]+\S/.test(t)) {
+      fermerPara();
+      if (bloc !== 'ol') { fermerBloc(); sb += '<ol>\n'; bloc = 'ol'; }
+      sb += '<li>' + enLigne(sansMarque(l.html, '\\d+[.)][ \\t]+')) + '</li>\n';
+      return;
+    }
+    if (t.charAt(0) === '>') {
+      fermerPara();
+      if (bloc !== 'bq') { fermerBloc(); sb += '<blockquote>\n'; bloc = 'bq'; }
+      sb += '<p>' + enLigne(sansMarque(l.html, '&gt;[ \\t]*')) + '</p>\n';
+      return;
+    }
+    if (bloc !== null) fermerBloc();
+    para.push(enLigne(l.html));
   });
+  fermerPara(); fermerBloc();
   return sb;
 }
 
@@ -1173,18 +1226,20 @@ function styleApercu() {
   s += "padding:1.2em 2em;font-family:-apple-system,'Segoe UI',sans-serif}\n";
   s += 'header h1{color:var(--orclair);font-size:1.25em;margin:0}\n';
   s += 'header p{color:var(--intact);margin:.3em 0 0;font-size:.95em}\n';
-  s += 'nav{margin-top:.8em}\n';
-  s += 'nav button,#papier button{background:var(--panneau);color:var(--texte);border:1px solid var(--bordure);';
+  s += '#papier button{background:var(--panneau);color:var(--texte);border:1px solid var(--bordure);';
   s += 'border-radius:8px;padding:.35em 1em;margin-right:.5em;cursor:pointer;';
   s += "font-family:-apple-system,'Segoe UI',sans-serif;font-size:.95em}\n";
-  s += 'nav button.actif,#papier button.actif{background:var(--or);color:#14141e;border-color:var(--or)}\n';
+  s += '#papier button.actif{background:var(--or);color:#14141e;border-color:var(--or)}\n';
   s += 'main{max-width:44em;margin:2.5em auto;padding:0 1.5em;';
   s += "font-family:Georgia,'Times New Roman',serif;font-size:1.05em;line-height:1.75}\n";
-  s += "main h1,main h2,main h3,main h4{color:var(--orclair);font-family:-apple-system,'Segoe UI',sans-serif;line-height:1.3}\n";
+  s += 'main p,main li,main h1,main h2,main h3,main h4,main h5,main h6{white-space:pre-wrap}\n';
+  s += "main h1,main h2,main h3,main h4,main h5,main h6{color:var(--orclair);font-family:-apple-system,'Segoe UI',sans-serif;line-height:1.3}\n";
   s += 'main a{color:var(--lien)}\n';
   s += 'blockquote{border-left:3px solid var(--or);margin-left:0;padding-left:1em;color:var(--intact)}\n';
-  s += 'code{background:var(--panneau);padding:.1em .3em;border-radius:4px}\n';
-  s += 'pre.diff{white-space:pre-wrap;font-family:inherit;margin:0}\n';
+  s += 'code{background:var(--panneau);padding:.1em .3em;border-radius:4px;font-size:.9em}\n';
+  s += 'p.sep{text-align:center;letter-spacing:.4em;color:var(--intact)}\n';
+  s += 'hr{border:0;border-top:1px solid var(--bordure);margin:1.5em 0}\n';
+  s += 'p.note{color:var(--intact);font-style:italic}\n';
   s += 'del{background:color-mix(in srgb,var(--suppr) 22%,transparent);color:var(--suppr);text-decoration:line-through}\n';
   s += 'ins{background:color-mix(in srgb,var(--ajout) 22%,transparent);color:var(--ajout);text-decoration:none}\n';
   s += '.ctx{color:var(--intact)}\n';
@@ -1257,26 +1312,16 @@ function scriptApercu() {
   s += "function reinit(){etat.couleurs={};sauver();appliquer();}\n";
   s += "function plier(){etat.plie=!etat.plie;sauver();appliquer();}\n";
   s += "function filtrer(){etat.off=[];document.querySelectorAll('#papier input[type=checkbox]').forEach(function(c){if(!c.checked)etat.off.push(c.getAttribute('data-c'));});sauver();appliquer();}\n";
-  s += "function voir(v){\n";
-  s += "document.getElementById('corrections').style.display=v=='c'?'block':'none';\n";
-  s += "document.getElementById('mise').style.display=v=='m'?'block':'none';\n";
-  s += "document.getElementById('bc').className=v=='c'?'actif':'';\n";
-  s += "document.getElementById('bm').className=v=='m'?'actif':'';\n}\n";
   s += "var st=document.createElement('style');st.id='filtre';document.head.appendChild(st);appliquer();\n";
   return s;
 }
 
 // avant = le texte d'origine, etapes = le texte après chaque règle (cf.
-// nettoyerTexte), finalTexte = ce que Copier/Enregistrer produiront.
-async function construireApercu(nomDocument, avantT, etapes, finalTexte, pandoc) {
-  var mise = null;
-  if (pandoc !== null)
-    try { mise = await markdownVersHtml(pandoc, finalTexte, separateursDe(_options)); }
-    catch (e) { }
-  if (mise === null) mise = renduSommaire(desechapper(finalTexte));
-
+// nettoyerTexte), separateurs = les séparateurs protégés (rendus centrés).
+function construireApercu(nomDocument, avantT, etapes, separateurs) {
   var regles = [];
-  var corrections = construireDiff(avantT, etapes, regles);
+  var lignes = construireDiff(avantT, etapes, regles);
+  var corps = mettreEnPage(lignes, separateurs || []);
 
   var sb = '';
   sb += '<!DOCTYPE html>\n<html lang="fr">\n<head>\n';
@@ -1286,13 +1331,9 @@ async function construireApercu(nomDocument, avantT, etapes, finalTexte, pandoc)
   sb += '</style>\n</head>\n<body>\n<header>\n';
   sb += '<h1>⭐ Stargazer — Typonanny</h1>\n';
   sb += '<p>' + echapper(nomDocument) + '</p>\n';
-  sb += '<nav>\n';
-  sb += '<button id="bc" class="actif" onclick="voir(\'c\')">Corrections</button>\n';
-  sb += '<button id="bm" onclick="voir(\'m\')">Mise en page</button>\n';
-  sb += '</nav>\n</header>\n';
+  sb += '</header>\n';
   sb += papierApercu(regles);
-  sb += '<main id="corrections">\n' + corrections + '\n</main>\n';
-  sb += '<main id="mise" style="display:none">\n' + mise + '\n</main>\n';
+  sb += '<main>\n' + corps + '\n</main>\n';
   sb += '<script>\n' + scriptApercu() + '<\/script>\n</body>\n</html>\n';
   return sb;
 }
@@ -1438,9 +1479,7 @@ async function ouvrirApercu() {
     var chemin = env.appDir + '/exports/apercu.html';
     var nomDoc = _fichierSource !== null
       ? SG.basename(_fichierSource) : 'texte collé';
-    var pandoc = await trouverPandoc();
-    var html = await construireApercu(nomDoc, _avantNettoye, _etapes,
-      _resultat, pandoc);
+    var html = construireApercu(nomDoc, _avantNettoye, _etapes, separateursDe(_options));
     var w = await SG.write(chemin, '﻿' + html);   // UTF-8 avec BOM
     if (!w.ok) throw new Error("écriture de l'aperçu impossible");
     await SG.openPath(chemin);

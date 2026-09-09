@@ -1,5 +1,15 @@
 ﻿# Changelog — Typonanny
 
+## 1.7.1 — 2026-09-09
+
+- **Une seule vue dans l'aperçu.** Plus de bascule « Corrections » /
+  « Mise en page » : le texte est mis en page (titres, gras, italiques,
+  listes, citations, filets, séparateurs de texte centrés, liens, code)
+  ET chaque retouche y est surlignée au caractère près. Le rendu ne passe
+  plus par Pandoc : c'est le Markdown essentiel du manuscrit, appliqué
+  par-dessus le diff, les espaces (fines, insécables, doubles) visibles
+  tels quels.
+
 ## 1.7.0 — 2026-09-09
 
 - **Mises à jour depuis l'application.** Nouvelle barre de menus
