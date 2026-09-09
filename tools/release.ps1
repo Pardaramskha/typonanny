@@ -1,16 +1,16 @@
 ﻿# release.ps1 — fabrique ce qui part en release GitHub, dans dist\ :
 #
-#   typonanny-<version>.zip            l'archive « portable » Windows
+#   typonanny-windows-portable.zip   l'archive « portable » Windows
 #        (Stargazer la télécharge et la déballe dans apps\ ; à la main :
 #        déballer n'importe où et lancer Typonanny.exe)
-#   Typonanny-Setup-<version>.exe      l'installeur autonome Windows
+#   Typonanny-Setup-Windows.exe      l'installeur autonome Windows
 #        (auto-extracteur qui embarque la même archive, crée les
 #        raccourcis et l'entrée « Applications installées » — voir
 #        setup-stub.cs)
-#   Typonanny-mac-<version>.zip        l'édition macOS : les sources de
+#   Typonanny-macOS-portable.zip     l'édition macOS : les sources de
 #        l'applet (mac/) ; sur le Mac, « zsh build.sh » compile l'app
 #        avec l'osacompile livré avec macOS
-#   Typonanny-Setup-<version>.command  l'auto-installeur macOS :
+#   Typonanny-Setup-macOS.command    l'auto-installeur macOS :
 #        double-clic → déballe dans ~/Applications/Typonanny et compile
 #        l'applet sur place
 #
@@ -20,8 +20,12 @@
 # (L'édition mac ne peut pas être compilée ici — osacompile n'existe que
 # sur macOS — d'où des archives de sources qui se compilent à l'arrivée.)
 #
-# Le nom de l'archive Windows est le SEUL à contenir l'id de l'app : le
-# hub choisit l'archive .zip de la release dont le nom contient l'id.
+# Les noms ne portent PAS la version (elle est dans le tag de la release
+# et dans VERSION) : ainsi les boutons du README pointent sur
+# releases/latest/download/<nom> et téléchargent toujours la dernière.
+# Le hub, lui, choisit l'archive .zip de la release dont le nom contient
+# l'id de l'app et « windows » (voir Depot.cs) — l'archive mac contient
+# aussi l'id, d'où le mot-clé.
 
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
@@ -74,14 +78,14 @@ $fichiers = @('Typonanny.exe', 'typonanny.stargazer.json', 'VERSION',
               'scripts\install-pandoc.ps1')
 foreach ($f in $fichiers) { Copier $f $stage }
 
-$zipWin = Join-Path $dist "typonanny-$version.zip"
+$zipWin = Join-Path $dist "typonanny-windows-portable.zip"
 Zipper $stage $zipWin
 Remove-Item -Recurse -Force $stage
 
 # 3. l'installeur : le talon compilé avec l'archive embarquée en ressource
 $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (-not (Test-Path $csc)) { $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe' }
-$setup = Join-Path $dist "Typonanny-Setup-$version.exe"
+$setup = Join-Path $dist "Typonanny-Setup-Windows.exe"
 & $csc /nologo /target:winexe "/out:$setup" /optimize+ `
     /win32icon:assets\icon.ico `
     "/resource:$zipWin,app.zip" `
@@ -112,7 +116,7 @@ foreach ($f in $fichiersMac) {
         Copy-Item $f $cible
     }
 }
-$zipMac = Join-Path $dist "Typonanny-mac-$version.zip"
+$zipMac = Join-Path $dist "Typonanny-macOS-portable.zip"
 Zipper $stageMac $zipMac
 Remove-Item -Recurse -Force $stageMac
 
@@ -153,7 +157,7 @@ exit 0
 __PAYLOAD__
 
 '@
-$command = Join-Path $dist "Typonanny-Setup-$version.command"
+$command = Join-Path $dist "Typonanny-Setup-macOS.command"
 $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($zipMac), 'InsertLineBreaks') -replace "`r`n", "`n"
 [IO.File]::WriteAllText($command, ($entete -replace "`r`n", "`n") + $b64 + "`n", $utf8)
 

@@ -3,10 +3,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Pardaramskha/typonanny/releases/latest"><img src="assets/downloads/install-windows.png" alt="Installeur Windows" width="24%"></a>
-  <a href="https://github.com/Pardaramskha/typonanny/releases/latest"><img src="assets/downloads/portable-windows.png" alt="Version portable Windows" width="24%"></a>
-  <a href="https://github.com/Pardaramskha/typonanny/releases/latest"><img src="assets/downloads/install-mac.png" alt="Installeur macOS" width="24%"></a>
-  <a href="https://github.com/Pardaramskha/typonanny/releases/latest"><img src="assets/downloads/portable-mac.png" alt="Version portable macOS" width="24%"></a>
+  <a href="https://github.com/Pardaramskha/typonanny/releases/latest/download/Typonanny-Setup-Windows.exe"><img src="assets/downloads/install-windows.png" alt="Installeur Windows" width="24%"></a>
+  <a href="https://github.com/Pardaramskha/typonanny/releases/latest/download/typonanny-windows-portable.zip"><img src="assets/downloads/portable-windows.png" alt="Version portable Windows" width="24%"></a>
+  <a href="https://github.com/Pardaramskha/typonanny/releases/latest/download/Typonanny-Setup-macOS.command"><img src="assets/downloads/install-mac.png" alt="Installeur macOS" width="24%"></a>
+  <a href="https://github.com/Pardaramskha/typonanny/releases/latest/download/Typonanny-macOS-portable.zip"><img src="assets/downloads/portable-mac.png" alt="Version portable macOS" width="24%"></a>
 </p>
 
 # Typonanny
