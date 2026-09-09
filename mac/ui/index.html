@@ -836,8 +836,24 @@ async function importerEnMarkdown(pandoc, document_, separateurs) {
       q(temp) + ' ' + q(document_));
     var t = (await SG.read(temp)).text;
     if (t === null) throw new Error('conversion Pandoc vide');
-    return desechapperSeparateurs(stripBom(t), separateurs);
+    return desechapperSeparateurs(deciter(stripBom(t)), separateurs);
   } finally { SG.shell('rm -f ' + q(temp)); }
+}
+
+// Le lecteur docx/odt de Pandoc prend tout paragraphe indenté (retrait
+// gauche, courant dans un manuscrit) pour une citation : le texte entier
+// ressort en « > ». Si la citation envahit la majorité des lignes, ce
+// n'en est pas une : on retire les chevrons partout.
+function deciter(markdown) {
+  var lignes = markdown.replace(/\r\n/g, '\n').split('\n');
+  var pleines = 0, citees = 0;
+  lignes.forEach(function (l) {
+    if (!l.trim().length) return;
+    pleines++;
+    if (l.charAt(0) === '>') citees++;
+  });
+  if (!pleines || citees * 2 < pleines) return markdown;
+  return markdown.replace(/^(?:>[ \t]?)+/gm, '');
 }
 
 // Une ligne « \*\*\* » (séparateur échappé par Pandoc) -> « *** ».

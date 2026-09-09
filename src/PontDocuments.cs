@@ -106,9 +106,29 @@ namespace Typonanny
             {
                 Executer(pandoc, "--wrap=none -t " + FormatImport + " -o \"" + temp +
                     "\" \"" + document + "\"");
-                return DesechapperSeparateurs(File.ReadAllText(temp), separateurs);
+                return DesechapperSeparateurs(Deciter(File.ReadAllText(temp)), separateurs);
             }
             finally { try { if (File.Exists(temp)) File.Delete(temp); } catch { } }
+        }
+
+        // Le lecteur docx/odt de Pandoc prend tout paragraphe indenté
+        // (retrait gauche, courant dans un manuscrit) pour une citation :
+        // le texte entier ressort en « > ». Si la citation envahit la
+        // majorité des lignes, ce n'en est pas une : on retire les chevrons
+        // partout. Les vraies citations d'un texte normal (minoritaires)
+        // restent telles quelles.
+        public static string Deciter(string markdown)
+        {
+            var lignes = markdown.Replace("\r\n", "\n").Split('\n');
+            var pleines = 0; var citees = 0;
+            foreach (var l in lignes)
+            {
+                if (l.Trim().Length == 0) continue;
+                pleines++;
+                if (l.StartsWith(">")) citees++;
+            }
+            if (pleines == 0 || citees * 2 < pleines) return markdown;
+            return Regex.Replace(markdown, @"(?m)^(?:>[ \t]?)+", "");
         }
 
         // Une ligne « \*\*\* » (séparateur échappé par Pandoc) -> « *** ».

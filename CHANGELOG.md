@@ -1,5 +1,14 @@
 ﻿# Changelog — Typonanny
 
+## 1.7.4 — 2026-09-09
+
+- **Plus de manuscrit entièrement « cité ».** Le lecteur .docx/.odt de
+  Pandoc prend tout paragraphe indenté (retrait gauche, courant dans un
+  manuscrit) pour une citation Markdown : le texte entier arrivait avec
+  des `>` en tête de ligne. Si la citation envahit la majorité des lignes,
+  ce n'en est pas une : les chevrons sont retirés à l'import. Les vraies
+  citations d'un texte normal, minoritaires, restent telles quelles.
+
 ## 1.7.3 — 2026-09-09
 
 - **Le filtre de l'aperçu ne se mémorise plus.** Une règle décochée dans
