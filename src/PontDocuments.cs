@@ -93,9 +93,13 @@ namespace Typonanny
         // aberration pour un manuscrit ; ces marques ne servent à rien à
         // l'aller-retour (la chirurgie .docx garde les styles, et l'export
         // Pandoc ne sait de toute façon pas les rendre au document).
+        // -raw_html/-raw_tex : un signet Word ou LibreOffice ressortait en
+        // « <span id="anchor"></span> » collé au premier mot ; sans HTML
+        // brut, ces spans sans contenu disparaissent (le texte, lui, reste).
         public const string FormatImport = "markdown-smart-header_attributes-auto_identifiers" +
             "-bracketed_spans-native_divs-native_spans-fenced_divs-raw_attribute" +
-            "-link_attributes-inline_code_attributes-fenced_code_attributes";
+            "-link_attributes-inline_code_attributes-fenced_code_attributes" +
+            "-raw_html-raw_tex";
 
         public static string ImporterEnMarkdown(string pandoc, string document,
             string[] separateurs)

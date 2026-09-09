@@ -832,7 +832,8 @@ async function importerEnMarkdown(pandoc, document_, separateurs) {
     await executerPandoc(pandoc,
       '--wrap=none -t markdown-smart-header_attributes-auto_identifiers' +
       '-bracketed_spans-native_divs-native_spans-fenced_divs-raw_attribute' +
-      '-link_attributes-inline_code_attributes-fenced_code_attributes -o ' +
+      '-link_attributes-inline_code_attributes-fenced_code_attributes' +
+      '-raw_html-raw_tex -o ' +   // un signet ressortait en <span id="anchor"></span>
       q(temp) + ' ' + q(document_));
     var t = (await SG.read(temp)).text;
     if (t === null) throw new Error('conversion Pandoc vide');

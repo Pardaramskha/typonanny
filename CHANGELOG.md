@@ -1,5 +1,13 @@
 ﻿# Changelog — Typonanny
 
+## 1.7.5 — 2026-09-09
+
+- **Plus de `<span id="anchor"></span>` en tête de texte.** Un signet
+  posé par Word ou LibreOffice (souvent au tout début du document)
+  ressortait en HTML brut collé au premier mot. L'import demande à Pandoc
+  un Markdown sans HTML ni TeX bruts : ces balises vides disparaissent, le
+  texte lui-même reste intact.
+
 ## 1.7.4 — 2026-09-09
 
 - **Plus de manuscrit entièrement « cité ».** Le lecteur .docx/.odt de
