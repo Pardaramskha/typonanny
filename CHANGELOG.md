@@ -1,4 +1,36 @@
-# Changelog — Typonanny
+﻿# Changelog — Typonanny
+
+## 1.6.0 — 2026-09-09
+
+- **Typonanny prend son indépendance.** Elle quitte le dépôt du hub
+  Stargazer pour vivre dans le sien (github.com/Pardaramskha/typonanny),
+  d'où le hub la propose sous « Applications disponibles ». Le dépôt se
+  range : `src/` (un fichier par classe), `tools/` (build.bat, release.ps1,
+  setup-stub.cs, make-icon.ps1), `assets/`, `scripts/`, et
+  `typonanny.stargazer.json` remplace `manifest.json`. L'édition macOS vit
+  sous `mac/` avec son propre hôte (`mac/lib/host.js`) et son `deps.sh` —
+  elle ne dépend plus du dossier `mac/` du hub.
+- **Release installable.** `tools/release.ps1` fabrique l'archive portable
+  Windows (celle que le hub télécharge), l'installeur autonome
+  `Typonanny-Setup` (%LOCALAPPDATA%\Programs, raccourcis, désinstallation
+  depuis Paramètres, aucun droit admin), l'archive des sources mac et
+  l'auto-installeur `.command` (déballe dans ~/Applications et compile
+  l'applet avec l'osacompile du Mac).
+- **Pandoc dans un dossier partagé.** Hors du hub, il va dans
+  `%LOCALAPPDATA%\Stargazer\dependencies` (mac : `~/Library/Application
+  Support/Stargazer/dependencies`), commun à toutes les apps de la famille
+  — jamais téléchargé deux fois. Dans le hub, toujours `<hub>\dependencies` ;
+  `STARGAZER_DEPS` prime sur les deux. Plus de `bin\` local.
+- **Nouvelle icône** (le visuel de Rémi) et bannière du README.
+- **L'habillage rejoint la norme de la famille** (Marabook, Markdown we
+  go, My Somehow Legal Downloader) : boutons arrondis à icônes Phosphor,
+  zone de texte et rapport dans des cadres arrondis (bordure d'or au
+  focus), barre de titre sombre sur toutes les fenêtres, bouton principal
+  à droite. Les erreurs de lecture, d'enregistrement et d'aperçu s'affichent
+  dans une boîte de dialogue maison (pastille de sens, « Détails
+  techniques » repliés) en plus de la ligne de statut. Les messages ne
+  renvoient plus vers Skadoosh : Pandoc se télécharge tout seul.
+
 
 ## 1.5.0 — 2026-07-19
 

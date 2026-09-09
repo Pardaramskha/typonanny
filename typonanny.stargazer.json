@@ -2,6 +2,7 @@
   "id": "typonanny",
   "nom": "Typonanny",
   "description": "Nettoie la typographie française (insécables, guillemets, cadratins…) et compte signes, mots et feuillets.",
+  "logo": "assets/icon.png",
   "exe": "Typonanny.exe",
   "motsCles": ["typographie", "texte", "correction", "insécables", "guillemets", "signes", "feuillets", "comptage", "édition", "relecture"]
 }

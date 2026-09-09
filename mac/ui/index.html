@@ -707,8 +707,8 @@ async function trouverPandoc() {
     return env.depsDir + '/bin/pandoc';
   if ((await SG.exists(env.appDir + '/bin/pandoc')).exists)
     return env.appDir + '/bin/pandoc';
-  var r = await SG.shell('/bin/zsh ' +
-    q(env.macRoot + '/scripts/deps.sh') + ' where pandoc');
+  var r = await SG.shell('STARGAZER_DEPS=' + q(env.depsDir) + ' /bin/zsh ' +
+    q(env.appDir + '/scripts/deps.sh') + ' where pandoc');
   var p = r.ok ? r.out.trim() : '';
   return p || null;
 }
@@ -1297,8 +1297,8 @@ async function premiersPreparatifs() {
   voile.classList.add('ouvert');
   prepEtat('encours');
   var sortie = '';
-  var code = await SG.task('/bin/zsh ' +
-    q(env.macRoot + '/scripts/deps.sh') + ' ensure pandoc', {
+  var code = await SG.task('STARGAZER_DEPS=' + q(env.depsDir) + ' /bin/zsh ' +
+    q(env.appDir + '/scripts/deps.sh') + ' ensure pandoc', {
     onOutput: function (chunk) { sortie += chunk; }
   });
   await journalInstall(code, sortie);
