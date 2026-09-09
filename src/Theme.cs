@@ -302,6 +302,59 @@ namespace Typonanny
         }
     }
 
+    // ------------------------------------------------------------- menus
+    // Palette sombre des menus : WinForms les rend blancs.
+    public class NuitCouleurs : ProfessionalColorTable
+    {
+        public override Color MenuStripGradientBegin { get { return Theme.Nuit; } }
+        public override Color MenuStripGradientEnd { get { return Theme.Nuit; } }
+        public override Color MenuItemSelected { get { return Theme.Bordure; } }
+        public override Color MenuItemSelectedGradientBegin { get { return Theme.Bordure; } }
+        public override Color MenuItemSelectedGradientEnd { get { return Theme.Bordure; } }
+        public override Color MenuItemPressedGradientBegin { get { return Theme.Panneau; } }
+        public override Color MenuItemPressedGradientEnd { get { return Theme.Panneau; } }
+        public override Color MenuItemBorder { get { return Theme.Bordure; } }
+        public override Color MenuBorder { get { return Theme.Bordure; } }
+        public override Color ToolStripDropDownBackground { get { return Theme.Panneau; } }
+        public override Color ImageMarginGradientBegin { get { return Theme.Panneau; } }
+        public override Color ImageMarginGradientMiddle { get { return Theme.Panneau; } }
+        public override Color ImageMarginGradientEnd { get { return Theme.Panneau; } }
+        public override Color SeparatorDark { get { return Theme.Bordure; } }
+        public override Color SeparatorLight { get { return Theme.Bordure; } }
+    }
+
+    public static class Menus
+    {
+        public static void Styler(MenuStrip m)
+        {
+            m.Renderer = new ToolStripProfessionalRenderer(new NuitCouleurs());
+            m.BackColor = Theme.Nuit;
+            m.ForeColor = Theme.Texte;
+            m.Font = new Font("Segoe UI", 9.5f);
+            m.Padding = new Padding(8, 4, 0, 2);
+            foreach (ToolStripMenuItem it in m.Items) Colorer(it);
+        }
+
+        private static void Colorer(ToolStripMenuItem it)
+        {
+            it.ForeColor = Theme.Texte;
+            foreach (ToolStripItem s in it.DropDownItems)
+            {
+                s.ForeColor = Theme.Texte;
+                var sm = s as ToolStripMenuItem;
+                if (sm != null) Colorer(sm);
+            }
+        }
+
+        public static ToolStripMenuItem Entree(string texte, Keys raccourci, EventHandler action)
+        {
+            var it = new ToolStripMenuItem(texte);
+            if (raccourci != Keys.None) it.ShortcutKeys = raccourci;
+            it.Click += action;
+            return it;
+        }
+    }
+
     // ---------------------------------------------------------- dialogue
     // Le remplaçant de MessageBox, sur le modèle de Marabook : pastille
     // de sens (rouge = erreur, or = avertissement, bleu = question ou

@@ -407,7 +407,43 @@ var Stargazer = (function () {
       $('Fermer'), 'performClose:', $('w')));
     winItem.submenu = winMenu;
 
+    // Aide : les actions sont poussées à la page (SG.on('verifierMaj') et
+    // SG.on('aPropos')) — le standard « Vérifier les mises à jour » de la
+    // famille Stargazer.
+    makeMenuTargetClass();
+    menuTarget = $.SGMenuTarget.alloc.init;
+    var aideItem = $.NSMenuItem.alloc.init;
+    mainMenu.addItem(aideItem);
+    var aide = $.NSMenu.alloc.initWithTitle($('Aide'));
+    var verif = $.NSMenuItem.alloc.initWithTitleActionKeyEquivalent(
+      $('Vérifier les mises à jour…'), 'verifierMaj:', $(''));
+    verif.target = menuTarget;
+    aide.addItem(verif);
+    aide.addItem($.NSMenuItem.separatorItem);
+    var apropos = $.NSMenuItem.alloc.initWithTitleActionKeyEquivalent(
+      $('À propos de ' + appName), 'aPropos:', $(''));
+    apropos.target = menuTarget;
+    aide.addItem(apropos);
+    aideItem.submenu = aide;
+
     $.NSApplication.sharedApplication.mainMenu = mainMenu;
+  }
+
+  var menuTarget = null;
+  var menuTargetClassMade = false;
+  function makeMenuTargetClass() {
+    if (menuTargetClassMade) return; menuTargetClassMade = true;
+    function pousser(nom) {
+      var mw = S.mainWindow();
+      if (mw) S.pushToPage(mw.webview, "__push.bind(null,'" + nom + "')", {});
+    }
+    ObjC.registerSubclass({
+      name: 'SGMenuTarget',
+      methods: {
+        'verifierMaj:': { types: ['void', ['id']], implementation: function (s) { pousser('verifierMaj'); } },
+        'aPropos:': { types: ['void', ['id']], implementation: function (s) { pousser('aPropos'); } }
+      }
+    });
   }
 
   // Crée la fenêtre principale d'une app et charge son ui/<page>.

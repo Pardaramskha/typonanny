@@ -24,6 +24,11 @@ namespace Typonanny
         private string _resultat;      // ce que Copier/Enregistrer produisent
         private string _avantNettoye;  // le texte tel qu'au dernier nettoyage
         private string _corrige;       // le texte corrigé (même en signalement)
+        private List<Etape> _etapes = new List<Etape>();   // le texte après chaque règle
+        private readonly Label _lAvant;   // l'intitulé au-dessus du texte (note d'import)
+        private ToolStripMenuItem _aide;
+        private ToolStripMenuItem _verifierMaj;
+        private Updater.Info _maj;        // la mise à jour trouvée au lancement, s'il y en a une
         private readonly Label _stats;
         private readonly RoundedList _rapport;
         private readonly Label _status;
@@ -38,7 +43,7 @@ namespace Typonanny
         public MainForm(string fichierInitial)
         {
             Text = "Typonanny";
-            ClientSize = new Size(980, 640);
+            ClientSize = new Size(980, 666);
             MinimumSize = new Size(940, 520);
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 9f);
@@ -52,11 +57,35 @@ namespace Typonanny
             Typo.EcrireLigaturesParDefaut();
             _options = Typo.ChargerOptions();
 
+            // la barre de menus : Fichier, Aide (mises à jour, à propos)
+            var menu = new MenuStrip();
+            var fichier = new ToolStripMenuItem("Fichier");
+            fichier.DropDownItems.Add(Menus.Entree("Ouvrir un texte…", Keys.Control | Keys.O,
+                delegate { Ouvrir(); }));
+            fichier.DropDownItems.Add(Menus.Entree("Enregistrer sous…", Keys.Control | Keys.S,
+                delegate { Enregistrer(); }));
+            fichier.DropDownItems.Add(Menus.Entree("Règles…", Keys.Control | Keys.R,
+                delegate { OuvrirRegles(); }));
+            fichier.DropDownItems.Add(new ToolStripSeparator());
+            fichier.DropDownItems.Add(Menus.Entree("Quitter", Keys.None, delegate { Close(); }));
+            _aide = new ToolStripMenuItem("Aide");
+            _verifierMaj = Menus.Entree("Vérifier les mises à jour…", Keys.None,
+                delegate { VerifierMisesAJour(); });
+            _aide.DropDownItems.Add(_verifierMaj);
+            _aide.DropDownItems.Add(new ToolStripSeparator());
+            _aide.DropDownItems.Add(Menus.Entree("À propos de Typonanny", Keys.None,
+                delegate { APropos(); }));
+            menu.Items.Add(fichier);
+            menu.Items.Add(_aide);
+            Menus.Styler(menu);
+            MainMenuStrip = menu;
+            Controls.Add(menu);
+
             var titre = new Label();
             titre.Text = "La nounou de votre typographie française.";
             titre.Font = new Font("Segoe UI Semibold", 12f);
             titre.ForeColor = Theme.OrClair;
-            titre.SetBounds(20, 14, 500, 24);
+            titre.SetBounds(20, 40, 500, 24);
 
             // la barre de boutons : icône + texte, de gauche à droite
             var x = 20;
@@ -83,11 +112,12 @@ namespace Typonanny
             var regles = Bouton("Règles…", "regles", ref x, 100, false);
             regles.Click += delegate(object s, EventArgs e) { OuvrirRegles(); };
 
-            var lAvant = new Label();
-            lAvant.Text = "Votre texte (collez, déposez ou ouvrez) — le résultat se " +
-                "relit via « Ouvrir l'aperçu », mis en page dans le navigateur :";
-            lAvant.ForeColor = Theme.TexteDoux;
-            lAvant.SetBounds(20, 88, 800, 18);
+            _lAvant = new Label();
+            _lAvant.Text = IntituleParDefaut;
+            _lAvant.ForeColor = Theme.TexteDoux;
+            _lAvant.AutoEllipsis = true;
+            _lAvant.SetBounds(20, 114, 940, 18);
+            var lAvant = _lAvant;
 
             _avant = ZoneTexte();
             _avant.TextChanged += delegate(object s, EventArgs e)
@@ -137,7 +167,7 @@ namespace Typonanny
             var b = new RoundedButton();
             b.Text = texte;
             b.Icone = icone;
-            b.SetBounds(x, 46, largeur, 32);
+            b.SetBounds(x, 72, largeur, 32);
             Theme.StyleButton(b, primaire);
             Controls.Add(b);
             x += largeur + 8;
@@ -159,7 +189,8 @@ namespace Typonanny
         // le navigateur), stats + rapport en bas.
         private void Disposer()
         {
-            var hautZones = 110;
+            var hautZones = 136;
+            _lAvant.Width = ClientSize.Width - 40;
             var hautRapport = 96;
             var hauteur = ClientSize.Height - hautZones - hautRapport - 66;
             _avant.SetBounds(20, hautZones, ClientSize.Width - 40, hauteur);
@@ -174,6 +205,83 @@ namespace Typonanny
             Theme.Sombre(this);
         }
 
+        private const string IntituleParDefaut =
+            "Votre texte (collez, déposez ou ouvrez) — le résultat se relit via " +
+            "« Ouvrir l'aperçu », mis en page dans le navigateur :";
+        private const string IntituleImport =
+            "Manuscrit importé — les antislashs (\\#, 1\\., \\*) sont des marques Markdown " +
+            "de transport, pas un bug : absents de l'aperçu et du fichier exporté (vérifiez-le).";
+
+        // ------------------------------------------------- mises à jour
+
+        // Au lancement : vérification silencieuse en arrière-plan ; s'il y
+        // a plus récent, le menu Aide porte un point et le statut le dit.
+        private void VerifierMisesAJourEnFond()
+        {
+            var t = new System.Threading.Thread(delegate()
+            {
+                Updater.Info info;
+                try { info = Updater.Verifier(); }
+                catch { return; }
+                if (!Updater.PlusRecente(info.Version, Updater.VersionLocale(_appDir))) return;
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        if (IsDisposed) return;
+                        _maj = info;
+                        _aide.Text = "Aide  ●";
+                        _aide.ForeColor = Theme.OrClair;
+                        _verifierMaj.Text = "Installer la version " + info.Version + "…";
+                        if (_status.Text.Length == 0)
+                        {
+                            _status.Text = "Typonanny " + info.Version + " est disponible — menu Aide.";
+                            _status.ForeColor = Theme.OrClair;
+                        }
+                    });
+                }
+                catch { }
+            });
+            t.IsBackground = true;
+            t.Start();
+        }
+
+        // Menu Aide > Vérifier les mises à jour.
+        private void VerifierMisesAJour()
+        {
+            var info = _maj;
+            if (info == null)
+            {
+                Cursor = Cursors.WaitCursor;
+                try { info = Updater.Verifier(); }
+                catch (Exception ex)
+                {
+                    Cursor = Cursors.Default;
+                    MessageDialog.Show(this, "Impossible de vérifier les mises à jour : " + ex.Message,
+                        "Mises à jour", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                Cursor = Cursors.Default;
+                if (!Updater.PlusRecente(info.Version, Updater.VersionLocale(_appDir)))
+                {
+                    MessageDialog.Show(this, "Vous avez la dernière version de Typonanny (" +
+                        Updater.VersionLocale(_appDir) + ").", "Mises à jour",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+            }
+            using (var d = new MiseAJourDialog(info, _appDir))
+                d.ShowDialog(this);
+        }
+
+        private void APropos()
+        {
+            MessageDialog.Show(this, "Typonanny " + Updater.VersionLocale(_appDir) +
+                " — la nounou de votre typographie française.\n\n" +
+                "Une application de la famille Stargazer, par Rémi Escamilla.\n" +
+                "github.com/" + Updater.Depot, "À propos", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
         private bool _installationFaite;
 
         protected override void OnShown(EventArgs e)
@@ -181,6 +289,7 @@ namespace Typonanny
             base.OnShown(e);
             if (_installationFaite) return;
             _installationFaite = true;
+            VerifierMisesAJourEnFond();
             // Pandoc absent ? Il se télécharge tout seul (aller-retour .docx
             // complet et aperçu riche). L'app marche aussi sans lui.
             if (PontDocuments.TrouverPandoc(_appDir) == null)
@@ -230,6 +339,8 @@ namespace Typonanny
                     {
                         _avant.Text = PontDocuments.ImporterEnMarkdown(pandoc, chemin,
                             _options.Separateurs());
+                        _lAvant.Text = IntituleImport;
+                        _lAvant.ForeColor = Theme.OrClair;
                         _formatSource = ext.TrimStart('.');
                         _status.Text = chemin + " — importé via Pandoc : " +
                             "l'enregistrement redonnera un ." + _formatSource +
@@ -239,6 +350,8 @@ namespace Typonanny
                     else
                     {
                         _avant.Text = PontDocuments.ExtraireTexteBrut(chemin);
+                        _lAvant.Text = IntituleParDefaut;
+                        _lAvant.ForeColor = Theme.TexteDoux;
                         _formatSource = ext == ".docx" ? "docx" : null;
                         _status.Text = chemin + " — texte extrait sans mise en " +
                             "forme (Pandoc manque : il se télécharge au prochain " +
@@ -258,6 +371,8 @@ namespace Typonanny
                     _avant.Text = File.ReadAllText(chemin);
                     _formatSource = null;
                     _texteImporte = null;
+                    _lAvant.Text = IntituleParDefaut;
+                    _lAvant.ForeColor = Theme.TexteDoux;
                     _status.Text = chemin;
                     _status.ForeColor = Theme.TexteDoux;
                 }
@@ -287,6 +402,7 @@ namespace Typonanny
             var r = Typo.Nettoyer(_avant.Text, _options, oe, ae);
             _avantNettoye = _avant.Text;
             _corrige = r.Texte;
+            _etapes = r.Etapes;
             _resultat = _options.signalerSeulement ? _avant.Text : r.Texte;
 
             _rapport.Items.Clear();
@@ -329,7 +445,7 @@ namespace Typonanny
                     ? Path.GetFileName(_fichierSource) : "texte collé";
                 var pandoc = PontDocuments.TrouverPandoc(_appDir);
                 File.WriteAllText(chemin,
-                    Apercu.Construire(nomDoc, _avantNettoye, _corrige, _resultat, pandoc,
+                    Apercu.Construire(nomDoc, _avantNettoye, _etapes, _resultat, pandoc,
                         _options.Separateurs()),
                     new UTF8Encoding(true));
                 System.Diagnostics.Process.Start(chemin);

@@ -62,6 +62,21 @@
   #status.ok { color: var(--ok); }
   #status.erreur { color: var(--erreur); }
   #status.info { color: var(--info); }
+  #status.or { color: var(--or-clair); }
+  #l-avant.import { color: var(--or-clair); }
+  #maj-pill {
+    display: none; margin-left: 14px; padding: 2px 10px; vertical-align: middle;
+    background: var(--or); color: #14141e; border-radius: 999px;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  #maj-notes {
+    display: block; width: 100%; box-sizing: border-box; height: 170px; resize: none;
+    margin: 8px 0; padding: 8px 10px; background: var(--panneau); color: var(--texte);
+    border: 1px solid var(--bordure); border-radius: 8px; font: 13px -apple-system, sans-serif;
+  }
+  #maj-sous, #maj-etat { color: var(--texte-doux); font-size: 12.5px; }
+  #maj-etat.ok { color: var(--ok); }
+  #maj-etat.erreur { color: var(--erreur); }
 
   /* --------------------------------------------------- surcouches */
   .voile {
@@ -118,7 +133,7 @@
 </head>
 <body>
 
-<div id="titre">La nounou de votre typographie française.</div>
+<div id="titre">La nounou de votre typographie française.<span id="maj-pill"></span></div>
 
 <div id="barre">
   <button id="btn-ouvrir">Ouvrir un texte…</button>
@@ -161,6 +176,20 @@
   </div>
 </div>
 
+<!-- ------------------------------------------- mise à jour -->
+<div class="voile" id="voile-maj">
+  <div class="dialogue" style="width:520px">
+    <h2 id="maj-titre">Mise à jour</h2>
+    <div id="maj-sous"></div>
+    <textarea id="maj-notes" readonly spellcheck="false"></textarea>
+    <div id="maj-etat"></div>
+    <div class="boutons">
+      <button id="btn-maj-annuler">Plus tard</button>
+      <button class="primaire" id="btn-maj-ok">Télécharger et installer</button>
+    </div>
+  </div>
+</div>
+
 <!-- ------------------------------------- premiers préparatifs -->
 <div class="voile" id="voile-preparatifs">
   <div class="dialogue" style="width:460px">
@@ -197,6 +226,7 @@ var tempDir = '';      // NSTemporaryDirectory
 var _resultat = null;       // dernier nettoyage (null = périmé)
 var _avantNettoye = null;   // le texte tel qu'au dernier nettoyage
 var _corrige = null;        // le texte corrigé (même en signalement)
+var _etapes = [];           // le texte après chaque règle (aperçu)
 var _fichierSource = null;  // pour « Enregistrer sous » et le BOM
 var _bomSource = true;
 var _formatSource = null;   // "docx"/"odt" si importé
@@ -546,6 +576,14 @@ function nettoyerTexte(texte, o, ligaturesOe, ligaturesAe) {
   var zones = [];
   var travail = masquer(texte, zones, separateursDe(o));
   var rc;
+  // une étape par règle qui a changé quelque chose (pour l'aperçu)
+  var dernier = travail;
+  r.etapes = [];
+  function etaper(cle, libelle) {
+    if (travail === dernier) return;
+    r.etapes.push({ cle: cle, libelle: libelle, texte: travail });
+    dernier = travail;
+  }
 
   // (2) espaces bruts
   if (o.espaces) {
@@ -554,6 +592,7 @@ function nettoyerTexte(texte, o, ligaturesOe, ligaturesAe) {
     rc = remplacerCompte(travail, /(?<=[^ \n])  +(?=[^ \n])/g, ' ');
     travail = rc.t; compter('espace(s) en double', rc.n);
   }
+  etaper('espaces', 'Espaces');
 
   // (3) glyphes simples
   if (o.apostrophes) {
@@ -561,6 +600,7 @@ function nettoyerTexte(texte, o, ligaturesOe, ligaturesAe) {
     if (nApo > 0) travail = travail.split("'").join('’');
     compter('apostrophe(s) courbée(s)', nApo);
   }
+  etaper('apostrophes', 'Apostrophes courbes');
   if (o.ellipses) {
     rc = remplacerCompte(travail, /\betc(\.\.\.+|…)/g, 'etc.');
     travail = rc.t; compter('« etc. » recadré(s)', rc.n);
@@ -573,6 +613,7 @@ function nettoyerTexte(texte, o, ligaturesOe, ligaturesAe) {
     travail = rc.t;
     compter('points de suspension « … »', nEll + rc.n);
   }
+  etaper('ellipses', 'Points de suspension et « etc. »');
   if (o.guillemets && !estMinimal(o)) {
     var droits = travail.split('"').length - 1;
     if (droits % 2 !== 0)
@@ -588,6 +629,7 @@ function nettoyerTexte(texte, o, ligaturesOe, ligaturesAe) {
       compter('paire(s) de guillemets « »', nG);
     }
   }
+  etaper('guillemets', 'Guillemets français');
 
   // (4) tirets
   if (o.tiretsDialogue && !estMinimal(o)) {
@@ -597,11 +639,13 @@ function nettoyerTexte(texte, o, ligaturesOe, ligaturesAe) {
       function (m, g1) { return g1 + '— '; });
     travail = rc.t; compter('tiret(s) de dialogue « — »', rc.n);
   }
+  etaper('tiretsDialogue', 'Tirets de dialogue');
   if (o.intervalles && !estMinimal(o)) {
     rc = remplacerCompte(travail, /(?<![\d\-–])(\d{1,4})-(\d{1,4})(?![\d\-–])/g,
       function (m, a, b) { return a + '–' + b; });
     travail = rc.t; compter('intervalle(s) en demi-cadratin', rc.n);
   }
+  etaper('intervalles', 'Intervalles');
 
   // (5) insécables de ponctuation
   if (o.insecables && !estMinimal(o)) {
@@ -624,6 +668,7 @@ function nettoyerTexte(texte, o, ligaturesOe, ligaturesAe) {
     travail = rc.t;
     compter('insécable(s) de guillemets', nOuv + rc.n);
   }
+  etaper('insecables', 'Insécables de ponctuation');
   if (o.insecablesUnites && !estMinimal(o)) {
     rc = remplacerCompte(travail, /(?<=\d)[   ]*(?=[%€$])/g,
       NBSP, NBSP);
@@ -634,26 +679,31 @@ function nettoyerTexte(texte, o, ligaturesOe, ligaturesAe) {
     travail = rc.t;
     compter("insécable(s) d'unités (%, €, kg…)", nPc + rc.n);
   }
+  etaper('insecablesUnites', "Insécables d'unités");
   if (o.milliers && !estMinimal(o)) {
     rc = remplacerCompte(travail, /(?<=\b\d{1,3}) (?=\d{3}(?!\d))/g, FINE);
     travail = rc.t; compter('séparateur(s) de milliers en fine', rc.n);
   }
+  etaper('milliers', 'Milliers en fine');
 
   // (6) ligatures & divers
   if (o.ligaturesOe) {
     rc = ligaturer(travail, ligaturesOe, 'oe', 'œ');
     travail = rc.t; compter('ligature(s) œ', rc.n);
   }
+  etaper('ligaturesOe', 'Ligatures œ');
   if (o.ligaturesAe) {
     rc = ligaturer(travail, ligaturesAe, 'ae', 'æ');
     travail = rc.t; compter('ligature(s) æ', rc.n);
   }
+  etaper('ligaturesAe', 'Ligatures æ');
   if (o.dimensions && !estMinimal(o)) {
     rc = remplacerCompte(travail,
       /(?<=\d)[   ]*[xX][   ]*(?=\d)/g,
       NBSP + '×' + NBSP, NBSP + '×' + NBSP);
     travail = rc.t; compter('dimension(s) en ×', rc.n);
   }
+  etaper('dimensions', 'Dimensions');
   if (o.ordinaux) {
     var nOrd = 0;
     rc = remplacerCompte(travail, /\b1ères\b/g, '1res');
@@ -667,6 +717,7 @@ function nettoyerTexte(texte, o, ligaturesOe, ligaturesAe) {
     travail = rc.t; nOrd += rc.n;
     compter('ordinal(aux) recadré(s)', nOrd);
   }
+  etaper('ordinaux', 'Ordinaux');
   if (o.signalerMajuscules) {
     var rxMaj = /(?<=^|[.!?…]\s+)(Etat|Etats|Ecole|Ecoles|Eglise|Eglises|Elève|Eleve|Ere|Ete|Etude|Etudes|Epoque|Evidemment|Egalement|A)(?=\s)/gm;
     var mm;
@@ -682,6 +733,7 @@ function nettoyerTexte(texte, o, ligaturesOe, ligaturesAe) {
 
   // (7) réinjecter les zones protégées
   r.texte = demasquer(travail, zones);
+  r.etapes.forEach(function (e) { e.texte = demasquer(e.texte, zones); });
   return r;
 }
 
@@ -975,47 +1027,114 @@ function echapper(s) {
   return s.split('&').join('&amp;').split('<').join('&lt;').split('>').join('&gt;');
 }
 
-function renduLigneDiff(a, b) {
-  var ops = diffCaracteres(a, b);
-  if (ops === null)   // diff trop gros : montrer le nouveau, marqué
-    return '<ins>' + echapper(b) + '</ins>';
-  // regrouper les opérations contiguës de même type
+// Les antislashs d'échappement du Markdown (\#, 1\., \*) sont des marques
+// de transport : indispensables à l'aller-retour .docx, mais elles n'ont
+// rien à faire dans un aperçu.
+function desechapper(texte) {
+  return texte.replace(/\\([\\*_#+>~=|`\[\]!<.\-])/g, '$1');
+}
+
+// Le texte courant d'une ligne composée (sans les caractères supprimés).
+function courantDe(items) {
+  var s = '';
+  for (var i = 0; i < items.length; i++) if (items[i].k !== '-') s += items[i].c;
+  return s;
+}
+
+// Applique le diff « texte courant -> cible » sur la ligne composée, en
+// attribuant les retouches à « cle ». Un caractère inséré par une règle
+// précédente puis retiré par celle-ci disparaît simplement.
+function composer(items, cible, cle) {
+  var ops = diffCaracteres(courantDe(items), cible);
+  if (ops === null) {
+    // diff trop gros : tout l'ancien barré, tout le nouveau inséré
+    for (var j = items.length - 1; j >= 0; j--) if (items[j].k === '+') items.splice(j, 1);
+    items.forEach(function (it) { it.k = '-'; if (!it.cle) it.cle = cle; });
+    for (var m = 0; m < cible.length; m++) items.push({ c: cible.charAt(m), k: '+', cle: cle });
+    return;
+  }
+  var pos = 0;   // index dans items (on saute les supprimés)
+  ops.forEach(function (op) {
+    while (pos < items.length && items[pos].k === '-') pos++;
+    if (op.t === ' ') pos++;
+    else if (op.t === '-') {
+      if (pos >= items.length) return;
+      if (items[pos].k === '+') items.splice(pos, 1);
+      else { items[pos].k = '-'; items[pos].cle = cle; pos++; }
+    } else {
+      items.splice(pos, 0, { c: op.c, k: '+', cle: cle });
+      pos++;
+    }
+  });
+}
+
+// Regroupe les caractères contigus de même nature et de même règle.
+function rendre(items, comptes) {
   var sb = '', i = 0;
-  while (i < ops.length) {
-    var type = ops[i].t;
+  while (i < items.length) {
+    var k = items[i].k, cle = items[i].cle;
     var bloc = '';
-    while (i < ops.length && ops[i].t === type) { bloc += ops[i].c; i++; }
+    while (i < items.length && items[i].k === k && items[i].cle === cle) { bloc += items[i].c; i++; }
     var texte = echapper(bloc);
-    if (type === '-') sb += '<del>' + texte + '</del>';
-    else if (type === '+') sb += '<ins>' + texte + '</ins>';
-    else sb += texte;
+    if (k === ' ') { sb += texte; continue; }
+    var balise = k === '-' ? 'del' : 'ins';
+    sb += '<' + balise + ' data-c="' + (cle || 'autre') + '">' + texte + '</' + balise + '>';
+    if (cle && comptes.hasOwnProperty(cle)) comptes[cle]++;
   }
   return sb;
 }
 
 // La vue « Corrections » : le nettoyage ne touche jamais aux sauts de
-// ligne, donc chaque ligne se compare à son homologue.
-function construireDiff(avantT, corrige) {
+// ligne, donc chaque ligne se compare à son homologue, étape par étape
+// (une étape = une règle), pour que chaque retouche porte le nom de sa
+// règle. « regles » reçoit la liste des règles rencontrées avec leur
+// nombre de retouches, pour le filtre du paper.
+function construireDiff(avantT, etapes, regles) {
   var sb = '<pre class="diff">';
+  var corrige = etapes.length ? etapes[etapes.length - 1].texte : avantT;
   if (avantT === corrige) {
     sb += '<span class="ctx">Aucune correction : ce texte était déjà impeccable.</span>\n';
-    sb += echapper(corrige);
+    sb += echapper(desechapper(corrige));
     sb += '</pre>';
     return sb;
   }
-  var la = avantT.replace(/\r\n/g, '\n').split('\n');
-  var lc = corrige.replace(/\r\n/g, '\n').split('\n');
-  if (la.length === lc.length) {
+  var comptes = {}, libelles = {}, ordre = [];
+  var la = desechapper(avantT).replace(/\r\n/g, '\n').split('\n');
+  var lignesEtapes = [];
+  var coherent = true;
+  etapes.forEach(function (e) {
+    var l = desechapper(e.texte).replace(/\r\n/g, '\n').split('\n');
+    if (l.length !== la.length) coherent = false;
+    lignesEtapes.push(l);
+    if (!libelles.hasOwnProperty(e.cle)) { libelles[e.cle] = e.libelle; ordre.push(e.cle); comptes[e.cle] = 0; }
+  });
+  if (coherent) {
     for (var i = 0; i < la.length; i++) {
-      if (la[i] === lc[i])
-        sb += '<span class="ctx">' + echapper(la[i]) + '</span>\n';
-      else {
-        sb += renduLigneDiff(la[i], lc[i]);
-        sb += '\n';
+      var items = [];
+      for (var c = 0; c < la[i].length; c++) items.push({ c: la[i].charAt(c), k: ' ', cle: null });
+      var change = false;
+      for (var k = 0; k < etapes.length; k++) {
+        var cible = lignesEtapes[k][i];
+        if (courantDe(items) === cible) continue;
+        change = true;
+        composer(items, cible, etapes[k].cle);
       }
+      if (!change) sb += '<span class="ctx">' + echapper(la[i]) + '</span>\n';
+      else sb += rendre(items, comptes) + '\n';
     }
-  } else sb += renduLigneDiff(avantT, corrige);   // prudence (ne devrait pas arriver)
+  } else {
+    // prudence (ne devrait pas arriver) : un seul diff, sans règle
+    libelles.autre = 'Corrections'; ordre.push('autre'); comptes.autre = 0;
+    var tous = [];
+    var av = desechapper(avantT).replace(/\r\n/g, '\n');
+    for (var q2 = 0; q2 < av.length; q2++) tous.push({ c: av.charAt(q2), k: ' ', cle: null });
+    composer(tous, desechapper(corrige).replace(/\r\n/g, '\n'), 'autre');
+    sb += rendre(tous, comptes);
+  }
   sb += '</pre>';
+  ordre.forEach(function (cle) {
+    if (comptes[cle] > 0) regles.push({ cle: cle, libelle: libelles[cle], n: comptes[cle] });
+  });
   return sb;
 }
 
@@ -1043,45 +1162,127 @@ function renduSommaire(texte) {
   return sb;
 }
 
-// avant = le texte d'origine, corrige = le texte corrigé (même en mode
-// signalement), finalTexte = ce que Copier/Enregistrer produiront.
-async function construireApercu(nomDocument, avantT, corrige, finalTexte, pandoc) {
+// L'habillage de l'aperçu : les couleurs sont des variables CSS, le paper
+// les change en direct.
+function styleApercu() {
+  var s = '';
+  s += ':root{--fond:#0b1026;--texte:#e6e6f0;--intact:#9aa3c0;--ajout:#98c379;--suppr:#e66e78;';
+  s += '--panneau:#131a33;--bordure:#2a3358;--or:#d4af37;--orclair:#f4d77a;--lien:#7aa2f7}\n';
+  s += 'body{background:var(--fond);color:var(--texte);margin:0;padding:0}\n';
+  s += 'header{background:var(--panneau);border-bottom:1px solid var(--bordure);';
+  s += "padding:1.2em 2em;font-family:-apple-system,'Segoe UI',sans-serif}\n";
+  s += 'header h1{color:var(--orclair);font-size:1.25em;margin:0}\n';
+  s += 'header p{color:var(--intact);margin:.3em 0 0;font-size:.95em}\n';
+  s += 'nav{margin-top:.8em}\n';
+  s += 'nav button,#papier button{background:var(--panneau);color:var(--texte);border:1px solid var(--bordure);';
+  s += 'border-radius:8px;padding:.35em 1em;margin-right:.5em;cursor:pointer;';
+  s += "font-family:-apple-system,'Segoe UI',sans-serif;font-size:.95em}\n";
+  s += 'nav button.actif,#papier button.actif{background:var(--or);color:#14141e;border-color:var(--or)}\n';
+  s += 'main{max-width:44em;margin:2.5em auto;padding:0 1.5em;';
+  s += "font-family:Georgia,'Times New Roman',serif;font-size:1.05em;line-height:1.75}\n";
+  s += "main h1,main h2,main h3,main h4{color:var(--orclair);font-family:-apple-system,'Segoe UI',sans-serif;line-height:1.3}\n";
+  s += 'main a{color:var(--lien)}\n';
+  s += 'blockquote{border-left:3px solid var(--or);margin-left:0;padding-left:1em;color:var(--intact)}\n';
+  s += 'code{background:var(--panneau);padding:.1em .3em;border-radius:4px}\n';
+  s += 'pre.diff{white-space:pre-wrap;font-family:inherit;margin:0}\n';
+  s += 'del{background:color-mix(in srgb,var(--suppr) 22%,transparent);color:var(--suppr);text-decoration:line-through}\n';
+  s += 'ins{background:color-mix(in srgb,var(--ajout) 22%,transparent);color:var(--ajout);text-decoration:none}\n';
+  s += '.ctx{color:var(--intact)}\n';
+  s += '#papier{position:fixed;top:1em;right:1em;width:16em;background:var(--panneau);';
+  s += 'border:1px solid var(--bordure);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.35);';
+  s += "font-family:-apple-system,'Segoe UI',sans-serif;font-size:.9em;color:var(--texte);z-index:10}\n";
+  s += '#papier h2{font-size:1em;margin:0;padding:.7em 1em;cursor:pointer;color:var(--orclair);user-select:none}\n';
+  s += "#papier h2:after{content:'▾';float:right;color:var(--intact)}\n";
+  s += "#papier.plie h2:after{content:'▸'}\n";
+  s += '#papier.plie .corps{display:none}\n';
+  s += '#papier .corps{padding:0 1em 1em;max-height:70vh;overflow:auto}\n';
+  s += '#papier h3{font-size:.85em;text-transform:uppercase;letter-spacing:.04em;color:var(--intact);margin:1em 0 .4em}\n';
+  s += '#papier h3:first-child{margin-top:.2em}\n';
+  s += '#papier .themes button{margin:0 .4em 0 0;padding:.3em .8em}\n';
+  s += '#papier label{display:flex;align-items:center;justify-content:space-between;padding:.2em 0;cursor:pointer}\n';
+  s += '#papier input[type=color]{width:2.2em;height:1.6em;border:1px solid var(--bordure);border-radius:6px;background:none;padding:0;cursor:pointer}\n';
+  s += '#papier input[type=checkbox]{margin:0 .5em 0 0;accent-color:var(--or)}\n';
+  s += '#papier label.filtre{justify-content:flex-start}\n';
+  s += '#papier .n{margin-left:auto;color:var(--intact);font-size:.9em}\n';
+  s += '#papier .reset{margin-top:.6em;padding:.3em .8em;font-size:.9em}\n';
+  s += '#papier .vide{color:var(--intact);font-style:italic}\n';
+  s += '@media (max-width:70em){#papier{position:static;width:auto;margin:1em 1.5em 0}}\n';
+  return s;
+}
+
+// Le paper : thème, couleurs, filtre des règles.
+function papierApercu(regles) {
+  var s = '<aside id="papier">\n<h2 onclick="plier()">Affichage</h2>\n<div class="corps">\n';
+  s += '<h3>Thème</h3>\n<div class="themes">';
+  s += '<button id="th-sombre" onclick="theme(\'sombre\')">Sombre</button>';
+  s += '<button id="th-clair" onclick="theme(\'clair\')">Clair</button></div>\n';
+  s += '<h3>Couleurs</h3>\n';
+  [['fond', 'Fond'], ['texte', 'Texte modifié'], ['intact', 'Texte intact'],
+   ['ajout', 'Ajout'], ['suppr', 'Suppression']].forEach(function (c) {
+    s += '<label>' + c[1] + '<input type="color" id="c-' + c[0] +
+      '" oninput="couleur(\'' + c[0] + '\',this.value)"></label>\n';
+  });
+  s += '<button class="reset" onclick="reinit()">Couleurs du thème</button>\n';
+  s += '<h3>Corrections affichées</h3>\n';
+  if (!regles.length) s += '<div class="vide">Aucune correction.</div>\n';
+  regles.forEach(function (e) {
+    s += '<label class="filtre"><input type="checkbox" checked data-c="' + e.cle +
+      '" onchange="filtrer()">' + echapper(e.libelle) + '<span class="n">' + e.n + '</span></label>\n';
+  });
+  s += '</div>\n</aside>\n';
+  return s;
+}
+
+function scriptApercu() {
+  var s = '';
+  s += "var PRESETS={sombre:{fond:'#0b1026',texte:'#e6e6f0',intact:'#9aa3c0',ajout:'#98c379',suppr:'#e66e78',";
+  s += "panneau:'#131a33',bordure:'#2a3358',or:'#d4af37',orclair:'#f4d77a',lien:'#7aa2f7'},";
+  s += "clair:{fond:'#fbf8f1',texte:'#1f2430',intact:'#6b7280',ajout:'#2e7d32',suppr:'#c62828',";
+  s += "panneau:'#ffffff',bordure:'#d9d4c7',or:'#b8912a',orclair:'#8a6a12',lien:'#2f5fc4'}};\n";
+  s += "var CLES=['fond','texte','intact','ajout','suppr'];\n";
+  s += "var etat={theme:'sombre',couleurs:{},off:[],plie:false};\n";
+  s += "try{var s=localStorage.getItem('typonanny.apercu');if(s)etat=Object.assign(etat,JSON.parse(s));}catch(e){}\n";
+  s += "function sauver(){try{localStorage.setItem('typonanny.apercu',JSON.stringify(etat));}catch(e){}}\n";
+  s += "function appliquer(){var p=PRESETS[etat.theme]||PRESETS.sombre;var r=document.documentElement.style;\n";
+  s += "for(var k in p)r.setProperty('--'+k,p[k]);\n";
+  s += "CLES.forEach(function(k){var v=etat.couleurs[k]||p[k];r.setProperty('--'+k,v);document.getElementById('c-'+k).value=v;});\n";
+  s += "document.getElementById('th-sombre').className=etat.theme=='sombre'?'actif':'';\n";
+  s += "document.getElementById('th-clair').className=etat.theme=='clair'?'actif':'';\n";
+  s += "document.getElementById('papier').className=etat.plie?'plie':'';\n";
+  s += "var css='';document.querySelectorAll('#papier input[type=checkbox]').forEach(function(c){var k=c.getAttribute('data-c');\n";
+  s += "c.checked=etat.off.indexOf(k)<0;if(!c.checked)css+='ins[data-c=\"'+k+'\"]{background:none;color:inherit}del[data-c=\"'+k+'\"]{display:none}\\n';});\n";
+  s += "document.getElementById('filtre').textContent=css;}\n";
+  s += "function theme(t){etat.theme=t;etat.couleurs={};sauver();appliquer();}\n";
+  s += "function couleur(k,v){etat.couleurs[k]=v;sauver();appliquer();}\n";
+  s += "function reinit(){etat.couleurs={};sauver();appliquer();}\n";
+  s += "function plier(){etat.plie=!etat.plie;sauver();appliquer();}\n";
+  s += "function filtrer(){etat.off=[];document.querySelectorAll('#papier input[type=checkbox]').forEach(function(c){if(!c.checked)etat.off.push(c.getAttribute('data-c'));});sauver();appliquer();}\n";
+  s += "function voir(v){\n";
+  s += "document.getElementById('corrections').style.display=v=='c'?'block':'none';\n";
+  s += "document.getElementById('mise').style.display=v=='m'?'block':'none';\n";
+  s += "document.getElementById('bc').className=v=='c'?'actif':'';\n";
+  s += "document.getElementById('bm').className=v=='m'?'actif':'';\n}\n";
+  s += "var st=document.createElement('style');st.id='filtre';document.head.appendChild(st);appliquer();\n";
+  return s;
+}
+
+// avant = le texte d'origine, etapes = le texte après chaque règle (cf.
+// nettoyerTexte), finalTexte = ce que Copier/Enregistrer produiront.
+async function construireApercu(nomDocument, avantT, etapes, finalTexte, pandoc) {
   var mise = null;
   if (pandoc !== null)
     try { mise = await markdownVersHtml(pandoc, finalTexte, separateursDe(_options)); }
     catch (e) { }
-  if (mise === null) mise = renduSommaire(finalTexte);
+  if (mise === null) mise = renduSommaire(desechapper(finalTexte));
 
-  var corrections = construireDiff(avantT, corrige);
+  var regles = [];
+  var corrections = construireDiff(avantT, etapes, regles);
 
   var sb = '';
   sb += '<!DOCTYPE html>\n<html lang="fr">\n<head>\n';
   sb += '<meta charset="utf-8">\n';
-  sb += '<title>Stargazer — Typonanny — ' + echapper(nomDocument) +
-    '</title>\n<style>\n';
-  sb += 'body{background:#0b1026;color:#e6e6f0;margin:0;padding:0}\n';
-  sb += 'header{background:#131a33;border-bottom:1px solid #2a3358;';
-  sb += "padding:1.2em 2em;font-family:'Segoe UI',sans-serif}\n";
-  sb += 'header h1{color:#f4d77a;font-size:1.25em;margin:0}\n';
-  sb += 'header p{color:#9aa3c0;margin:.3em 0 0;font-size:.95em}\n';
-  sb += 'nav{margin-top:.8em}\n';
-  sb += 'nav button{background:#131a33;color:#e6e6f0;border:1px solid #2a3358;';
-  sb += 'border-radius:8px;padding:.35em 1em;margin-right:.5em;cursor:pointer;';
-  sb += "font-family:'Segoe UI',sans-serif}\n";
-  sb += 'nav button.actif{background:#d4af37;color:#14141e;border-color:#d4af37}\n';
-  sb += 'main{max-width:44em;margin:2.5em auto;padding:0 1.5em;';
-  sb += "font-family:Georgia,'Times New Roman',serif;font-size:1.05em;";
-  sb += 'line-height:1.75}\n';
-  sb += 'main h1,main h2,main h3,main h4{color:#f4d77a;';
-  sb += "font-family:'Segoe UI',sans-serif;line-height:1.3}\n";
-  sb += 'main a{color:#7aa2f7}\n';
-  sb += 'blockquote{border-left:3px solid #d4af37;margin-left:0;';
-  sb += 'padding-left:1em;color:#9aa3c0}\n';
-  sb += 'code{background:#131a33;padding:.1em .3em;border-radius:4px}\n';
-  sb += 'pre.diff{white-space:pre-wrap;font-family:inherit;margin:0}\n';
-  sb += 'del{background:#461a20;color:#e66e78;text-decoration:line-through}\n';
-  sb += 'ins{background:#183a22;color:#98c379;text-decoration:none}\n';
-  sb += '.ctx{color:#9aa3c0}\n';
+  sb += '<title>Stargazer — Typonanny — ' + echapper(nomDocument) + '</title>\n<style>\n';
+  sb += styleApercu();
   sb += '</style>\n</head>\n<body>\n<header>\n';
   sb += '<h1>⭐ Stargazer — Typonanny</h1>\n';
   sb += '<p>' + echapper(nomDocument) + '</p>\n';
@@ -1089,14 +1290,10 @@ async function construireApercu(nomDocument, avantT, corrige, finalTexte, pandoc
   sb += '<button id="bc" class="actif" onclick="voir(\'c\')">Corrections</button>\n';
   sb += '<button id="bm" onclick="voir(\'m\')">Mise en page</button>\n';
   sb += '</nav>\n</header>\n';
+  sb += papierApercu(regles);
   sb += '<main id="corrections">\n' + corrections + '\n</main>\n';
   sb += '<main id="mise" style="display:none">\n' + mise + '\n</main>\n';
-  sb += '<script>\nfunction voir(v){\n';
-  sb += "document.getElementById('corrections').style.display=v=='c'?'block':'none';\n";
-  sb += "document.getElementById('mise').style.display=v=='m'?'block':'none';\n";
-  sb += "document.getElementById('bc').className=v=='c'?'actif':'';\n";
-  sb += "document.getElementById('bm').className=v=='m'?'actif':'';\n";
-  sb += '}\n<\/script>\n</body>\n</html>\n';
+  sb += '<script>\n' + scriptApercu() + '<\/script>\n</body>\n</html>\n';
   return sb;
 }
 
@@ -1110,7 +1307,20 @@ avant.addEventListener('input', surTexteChange);
 
 function setAvant(texte) {
   avant.value = texte;
+  intitule(false);
   surTexteChange();
+}
+
+// L'intitulé au-dessus du texte : après un import Pandoc, il rappelle que
+// les antislashs (\#, 1\., \*) sont des marques Markdown de transport.
+var INTITULE_DEFAUT = "Votre texte (collez, déposez ou ouvrez) — le résultat se relit via " +
+  "« Ouvrir l'aperçu », mis en page dans le navigateur :";
+var INTITULE_IMPORT = "Manuscrit importé — les antislashs (\\#, 1\\., \\*) sont des marques Markdown " +
+  "de transport, pas un bug : absents de l'aperçu et du fichier exporté (vérifiez-le).";
+function intitule(importe) {
+  var l = document.getElementById('l-avant');
+  l.textContent = importe ? INTITULE_IMPORT : INTITULE_DEFAUT;
+  l.className = importe ? 'import' : '';
 }
 
 async function chargerFichier(chemin) {
@@ -1122,6 +1332,7 @@ async function chargerFichier(chemin) {
       var pandoc = await trouverPandoc();
       if (pandoc !== null) {
         setAvant(await importerEnMarkdown(pandoc, chemin, separateursDe(_options)));
+        intitule(true);
         _formatSource = ext.slice(1);
         setStatus(chemin + " — importé via Pandoc : l'enregistrement " +
           'redonnera un .' + _formatSource + " avec ses styles d'origine.", 'ok');
@@ -1192,6 +1403,7 @@ async function nettoyer() {
   var r = nettoyerTexte(avant.value, _options, oe, ae);
   _avantNettoye = avant.value;
   _corrige = r.texte;
+  _etapes = r.etapes;
   _resultat = _options.signalerSeulement ? avant.value : r.texte;
 
   rapportEl.innerHTML = '';
@@ -1227,7 +1439,7 @@ async function ouvrirApercu() {
     var nomDoc = _fichierSource !== null
       ? SG.basename(_fichierSource) : 'texte collé';
     var pandoc = await trouverPandoc();
-    var html = await construireApercu(nomDoc, _avantNettoye, _corrige,
+    var html = await construireApercu(nomDoc, _avantNettoye, _etapes,
       _resultat, pandoc);
     var w = await SG.write(chemin, '﻿' + html);   // UTF-8 avec BOM
     if (!w.ok) throw new Error("écriture de l'aperçu impossible");
@@ -1449,6 +1661,127 @@ SG.on('ouvrirFichier', function (p) {
 
 // ------------------------------------------------------------ démarrage
 
+// ============================================== mises à jour (menu Aide)
+// Le standard de la famille Stargazer : on interroge la dernière release
+// GitHub, on compare avec VERSION, et on installe. Sur Mac, l'installeur
+// est le .command de la release : téléchargé dans ~/Downloads puis ouvert
+// (il se déballe dans ~/Applications/Typonanny et recompile l'applet),
+// Typonanny se relance ensuite. Au lancement, une vérification
+// silencieuse : s'il y a plus récent, une pastille apparaît dans l'en-tête.
+
+var DEPOT = 'Pardaramskha/typonanny';
+var NOM_COMMAND = 'Typonanny-Setup-macOS.command';
+var _maj = null;   // la mise à jour trouvée, s'il y en a une
+
+async function versionLocale() {
+  var t = (await SG.read(env.appDir + '/VERSION')).text;
+  return (t || '').trim() || '0.0.0';
+}
+
+function nombresDe(v) {
+  var r = [0, 0, 0], p = String(v || '').split('.');
+  for (var i = 0; i < 3 && i < p.length; i++) { var m = /\d+/.exec(p[i]); r[i] = m ? parseInt(m[0], 10) : 0; }
+  return r;
+}
+
+function plusRecente(distante, locale) {
+  var a = nombresDe(distante), b = nombresDe(locale);
+  for (var i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
+  return false;
+}
+
+async function verifierRelease() {
+  var r = await SG.shell('curl -sSL --max-time 15 -H "Accept: application/vnd.github+json" ' +
+    '-H "User-Agent: Typonanny" https://api.github.com/repos/' + DEPOT + '/releases/latest');
+  if (!r.ok && !r.out) throw new Error('pas de connexion à GitHub.');
+  var j;
+  try { j = JSON.parse(r.out); } catch (e) { throw new Error('réponse GitHub illisible.'); }
+  if (!j.tag_name)
+    throw new Error(j.message === 'Not Found'
+      ? 'aucune version publiée trouvée (dépôt privé ou sans release).'
+      : (j.message || 'réponse GitHub illisible.'));
+  var url = null;
+  (j.assets || []).forEach(function (a) { if (a.name === NOM_COMMAND) url = a.browser_download_url; });
+  return { version: String(j.tag_name).replace(/^v/i, ''), urlCommand: url,
+    urlPage: j.html_url, notes: j.body || '' };
+}
+
+function montrerPastilleMaj(info) {
+  _maj = info;
+  var p = document.getElementById('maj-pill');
+  p.textContent = '● Typonanny ' + info.version + ' disponible';
+  p.style.display = 'inline-block';
+  if (!statusEl.textContent) setStatus('Typonanny ' + info.version + ' est disponible — menu Aide.', 'or');
+}
+
+async function verifierMisesAJourEnFond() {
+  try {
+    var info = await verifierRelease();
+    if (plusRecente(info.version, await versionLocale())) montrerPastilleMaj(info);
+  } catch (e) { }
+}
+
+async function verifierMisesAJour() {
+  var info = _maj;
+  if (!info) {
+    try { info = await verifierRelease(); }
+    catch (e) {
+      await SG.alert({ title: 'Mises à jour', message: 'Impossible de vérifier les mises à jour : ' + e.message });
+      return;
+    }
+    var locale = await versionLocale();
+    if (!plusRecente(info.version, locale)) {
+      await SG.alert({ title: 'Mises à jour', message: 'Vous avez la dernière version de Typonanny (' + locale + ').' });
+      return;
+    }
+  }
+  ouvrirMaj(info);
+}
+
+async function ouvrirMaj(info) {
+  document.getElementById('maj-titre').textContent = 'Typonanny ' + info.version + ' est disponible';
+  document.getElementById('maj-sous').textContent = 'Vous avez la ' + (await versionLocale()) + '. Ce qui change :';
+  document.getElementById('maj-notes').value = (info.notes || '').trim() || '(pas de notes pour cette version)';
+  var etat = document.getElementById('maj-etat');
+  etat.className = '';
+  etat.textContent = "L'installeur (" + NOM_COMMAND + ') est téléchargé dans ~/Downloads puis ouvert : ' +
+    'il déballe la nouvelle version dans ~/Applications/Typonanny et la recompile. Quittez Typonanny à la fin et relancez-la.';
+  document.getElementById('btn-maj-ok').disabled = !info.urlCommand;
+  document.getElementById('voile-maj').classList.add('ouvert');
+}
+
+async function installerMaj() {
+  var info = _maj;
+  if (!info || !info.urlCommand) return;
+  var etat = document.getElementById('maj-etat');
+  var btn = document.getElementById('btn-maj-ok');
+  btn.disabled = true;
+  etat.className = '';
+  etat.textContent = 'Téléchargement de la version ' + info.version + '…';
+  var dest = env.home + '/Downloads/' + NOM_COMMAND;
+  var r = await SG.shell('curl -sSL --max-time 120 -o ' + q(dest) + ' ' + q(info.urlCommand) +
+    ' && chmod +x ' + q(dest) + ' && open ' + q(dest));
+  if (!r.ok) {
+    etat.className = 'erreur';
+    etat.textContent = 'Impossible : ' + ((r.err || '').trim().split('\n')[0] || 'téléchargement raté');
+    btn.disabled = false;
+    return;
+  }
+  etat.className = 'ok';
+  etat.textContent = "L'installeur s'exécute dans le Terminal. Quittez Typonanny quand il a fini, puis relancez-la.";
+}
+
+SG.on('verifierMaj', function () { verifierMisesAJour(); });
+SG.on('aPropos', async function () {
+  await SG.alert({ title: 'À propos de Typonanny', message: 'Typonanny ' + (await versionLocale()) +
+    ' — la nounou de votre typographie française.\n\nUne application de la famille Stargazer, par Rémi Escamilla.\ngithub.com/' + DEPOT });
+});
+document.getElementById('maj-pill').onclick = function () { if (_maj) ouvrirMaj(_maj); };
+document.getElementById('btn-maj-ok').onclick = installerMaj;
+document.getElementById('btn-maj-annuler').onclick = function () {
+  document.getElementById('voile-maj').classList.remove('ouvert');
+};
+
 (async function init() {
   env = await SG.env();
   tempDir = (await SG.call('typo.tempDir')).dir;
@@ -1457,6 +1790,7 @@ SG.on('ouvrirFichier', function (p) {
   var fi = await SG.call('typo.fichierInitial');
   if (fi.path) await chargerFichier(fi.path);
   premiersPreparatifs();
+  verifierMisesAJourEnFond();
 })();
 </script>
 </body>

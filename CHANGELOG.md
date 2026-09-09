@@ -1,5 +1,28 @@
 ﻿# Changelog — Typonanny
 
+## 1.7.0 — 2026-09-09
+
+- **Mises à jour depuis l'application.** Nouvelle barre de menus
+  (Fichier, Aide) et « Aide > Vérifier les mises à jour… » : Typonanny
+  interroge la dernière release GitHub, montre ce qui change et
+  s'installe sur place — l'archive est déballée, l'app se ferme, les
+  fichiers sont remplacés (vos réglages et vos listes de ligatures
+  restent) et elle redémarre. Au lancement, une vérification silencieuse :
+  s'il y a plus récent, le menu Aide porte un point et le statut le dit.
+  C'est désormais le standard des apps de la famille Stargazer.
+- **L'aperçu se règle.** Un paper flottant en haut à droite : thème sombre
+  ou clair, et les cinq couleurs à la carte (fond, texte modifié, texte
+  intact, ajout, suppression), mémorisées par le navigateur. Et un filtre
+  par règle : chaque retouche est attribuée à la règle qui l'a faite
+  (apostrophes, tirets de dialogue, insécables…) — décochez une règle,
+  ses corrections s'effacent de la vue.
+- **Les marques Markdown n'apparaissent plus dans l'aperçu.** Les
+  antislashs de transport d'un manuscrit importé (`\#`, `1\.`, `\*`) sont
+  retirés des deux vues ; l'intitulé au-dessus du texte le rappelle après
+  un import (ce n'est pas un bug, et le fichier exporté n'en porte pas —
+  à vérifier).
+- Raccourcis : Ctrl+O ouvrir, Ctrl+S enregistrer sous, Ctrl+R règles.
+
 ## 1.6.1 — 2026-09-09
 
 - **Plus d'antislashs parasites à l'import des .docx/.odt.** Le writer

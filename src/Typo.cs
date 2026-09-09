@@ -70,9 +70,19 @@ namespace Typonanny
 
     // -------------------------------------------------------------- moteur
 
+    // Le texte après chaque règle qui a changé quelque chose : l'aperçu
+    // s'en sert pour attribuer chaque retouche à sa règle (filtre).
+    public class Etape
+    {
+        public string Cle;      // la clé de l'option (apostrophes, insecables…)
+        public string Libelle;  // son nom lisible
+        public string Texte;    // le texte après cette règle
+    }
+
     public class ResultatTypo
     {
         public string Texte;
+        public List<Etape> Etapes = new List<Etape>();
         // catégorie -> nombre de corrections (ordre d'insertion conservé)
         public List<KeyValuePair<string, int>> Compteurs =
             new List<KeyValuePair<string, int>>();
@@ -160,6 +170,7 @@ namespace Typonanny
             // code Markdown, heures/ratios. Jetons en zone privée Unicode.
             var zones = new List<string>();
             var travail = Masquer(texte, zones, o.Separateurs());
+            var dernier = travail;   // pour les étapes (une par règle qui agit)
 
             // (2) espaces bruts
             if (o.espaces)
@@ -171,6 +182,7 @@ namespace Typonanny
                 travail = RemplacerCompte(travail, @"(?<=[^ \n])  +(?=[^ \n])", " ", out nDouble);
                 r.Compter("espace(s) en double", nDouble);
             }
+            Etaper(r, "espaces", "Espaces", ref dernier, travail);
 
             // (3) glyphes simples
             if (o.apostrophes)
@@ -185,6 +197,7 @@ namespace Typonanny
                 travail = sb.ToString();
                 r.Compter("apostrophe(s) courbée(s)", n);
             }
+            Etaper(r, "apostrophes", "Apostrophes courbes", ref dernier, travail);
             if (o.ellipses)
             {
                 int nEtc;
@@ -198,6 +211,7 @@ namespace Typonanny
                 travail = RemplacerCompte(travail, @"(?<!\.)\. \. \.(?!\.)", "…", out nEll2);
                 r.Compter("points de suspension « … »", nEll + nEll2);
             }
+            Etaper(r, "ellipses", "Points de suspension et « etc. »", ref dernier, travail);
             if (o.guillemets && !o.Minimal())
             {
                 var droits = 0;
@@ -218,6 +232,7 @@ namespace Typonanny
                     r.Compter("paire(s) de guillemets « »", n);
                 }
             }
+            Etaper(r, "guillemets", "Guillemets français", ref dernier, travail);
 
             // (4) tirets
             if (o.tiretsDialogue && !o.Minimal())
@@ -230,6 +245,7 @@ namespace Typonanny
                     @"(?m)^([ \t]*)\\?-{1,2}[ \t]+", "$1— ", out nDial);
                 r.Compter("tiret(s) de dialogue « — »", nDial);
             }
+            Etaper(r, "tiretsDialogue", "Tirets de dialogue", ref dernier, travail);
             if (o.intervalles && !o.Minimal())
             {
                 int nInt;
@@ -237,6 +253,7 @@ namespace Typonanny
                     @"(?<![\d\-–])(\d{1,4})-(\d{1,4})(?![\d\-–])", "$1–$2", out nInt);
                 r.Compter("intervalle(s) en demi-cadratin", nInt);
             }
+            Etaper(r, "intervalles", "Intervalles", ref dernier, travail);
 
             // (5) insécables de ponctuation
             if (o.insecables && !o.Minimal())
@@ -265,6 +282,7 @@ namespace Typonanny
                     nbsp, out nFerm, nbsp);
                 r.Compter("insécable(s) de guillemets", nOuv + nFerm);
             }
+            Etaper(r, "insecables", "Insécables de ponctuation", ref dernier, travail);
             if (o.insecablesUnites && !o.Minimal())
             {
                 int nPc;
@@ -276,6 +294,7 @@ namespace Typonanny
                     " ", out nUnit, " ");
                 r.Compter("insécable(s) d'unités (%, €, kg…)", nPc + nUnit);
             }
+            Etaper(r, "insecablesUnites", "Insécables d'unités", ref dernier, travail);
             if (o.milliers && !o.Minimal())
             {
                 int nMil;
@@ -283,6 +302,7 @@ namespace Typonanny
                     "(?<=\\b\\d{1,3}) (?=\\d{3}(?!\\d))", " ", out nMil);
                 r.Compter("séparateur(s) de milliers en fine", nMil);
             }
+            Etaper(r, "milliers", "Milliers en fine", ref dernier, travail);
 
             // (6) ligatures & divers
             if (o.ligaturesOe)
@@ -291,12 +311,14 @@ namespace Typonanny
                 travail = Ligaturer(travail, ligaturesOe, "oe", "œ", ref n);
                 r.Compter("ligature(s) œ", n);
             }
+            Etaper(r, "ligaturesOe", "Ligatures œ", ref dernier, travail);
             if (o.ligaturesAe)
             {
                 var n = 0;
                 travail = Ligaturer(travail, ligaturesAe, "ae", "æ", ref n);
                 r.Compter("ligature(s) æ", n);
             }
+            Etaper(r, "ligaturesAe", "Ligatures æ", ref dernier, travail);
             if (o.dimensions && !o.Minimal())
             {
                 int nDim;
@@ -305,6 +327,7 @@ namespace Typonanny
                     " × ", out nDim, " × ");
                 r.Compter("dimension(s) en ×", nDim);
             }
+            Etaper(r, "dimensions", "Dimensions", ref dernier, travail);
             if (o.ordinaux)
             {
                 int a, b, c, d;
@@ -314,6 +337,7 @@ namespace Typonanny
                 travail = RemplacerCompte(travail, @"\b(\d+)i?èmes?\b", "$1e", out d);
                 r.Compter("ordinal(aux) recadré(s)", a + b + c + d);
             }
+            Etaper(r, "ordinaux", "Ordinaux", ref dernier, travail);
             if (o.signalerMajuscules)
             {
                 foreach (Match m in Regex.Matches(travail,
@@ -334,7 +358,19 @@ namespace Typonanny
 
             // (7) réinjecter les zones protégées
             r.Texte = Demasquer(travail, zones);
+            foreach (var e in r.Etapes) e.Texte = Demasquer(e.Texte, zones);
             return r;
+        }
+
+        // Une étape par règle qui a changé quelque chose.
+        private static void Etaper(ResultatTypo r, string cle, string libelle,
+            ref string dernier, string travail)
+        {
+            if (travail == dernier) return;
+            var e = new Etape();
+            e.Cle = cle; e.Libelle = libelle; e.Texte = travail;
+            r.Etapes.Add(e);
+            dernier = travail;
         }
 
         // Remplace et compte les VRAIS changements (idempotence : remplacer
